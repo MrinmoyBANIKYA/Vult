@@ -41,6 +41,28 @@ export async function createOrganization(name, region) {
   return must(await supabase.rpc('create_organization', { p_name: name, p_region: region }));
 }
 
+/** Joins a colleague's firm with its join code ("AB12-CD34"), as an analyst. */
+export async function joinOrganization(code) {
+  return must(await supabase.rpc('join_organization', { p_code: code }));
+}
+
+/** The firm's join code, or null for members who are not its owners or admins. */
+export async function firmJoinCode(orgId) {
+  const row = must(await supabase.from('org_join_codes').select('code').eq('org_id', orgId).maybeSingle());
+  return row?.code ?? null;
+}
+
+/** Replaces the firm's join code. Owners and admins only. */
+export async function rotateJoinCode(orgId) {
+  return must(await supabase.rpc('rotate_join_code', { p_org: orgId }));
+}
+
+/** The signed-in user's access token, for calls to a Vult engine that runs on a server. */
+export async function accessToken() {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 /** Gives a new account access to the seeded demo workspaces. Safe to call on every sign-in. */
 export async function ensureDemoAccess() {
   return must(await supabase.rpc('join_demo_workspaces'));

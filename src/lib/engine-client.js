@@ -2,13 +2,26 @@
  * Calls to the local Vult engine (server/index.js). In development Vite proxies /engine to it;
  * `npm run start` serves the app and the engine from one port.
  */
+// A deployed engine checks who is calling: the signed-in user's access token goes with every request.
+let tokenSource = null;
+export const setEngineAuth = source => {
+  tokenSource = source;
+};
+const authHeaders = async () => {
+  const token = tokenSource ? await tokenSource().catch(() => null) : null;
+  return token ? { authorization: `Bearer ${token}` } : {};
+};
+
 export function engineClient(base = '/engine') {
   const call = async (method, path, body) => {
     let response;
     try {
       response = await fetch(`${base}${path}`, {
         method,
-        headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+        headers: {
+          ...(await authHeaders()),
+          ...(body === undefined ? {} : { 'content-type': 'application/json' })
+        },
         body: body === undefined ? undefined : JSON.stringify(body)
       });
     } catch {
@@ -52,7 +65,9 @@ export function engineClient(base = '/engine') {
     async annualFiling(ticker) {
       let response;
       try {
-        response = await fetch(`${base}/filings/annual?ticker=${encodeURIComponent(ticker)}`);
+        response = await fetch(`${base}/filings/annual?ticker=${encodeURIComponent(ticker)}`, {
+          headers: await authHeaders()
+        });
       } catch {
         throw Object.assign(new Error('The Vult engine is not running. Start it with `npm run engine`.'), {
           offline: true
@@ -71,7 +86,7 @@ export function engineClient(base = '/engine') {
       return { filing, bytes: new Uint8Array(await response.arrayBuffer()) };
     },
     async getRunPdf(id) {
-      const response = await fetch(`${base}/runs/${encodeURIComponent(id)}/pdf`);
+      const response = await fetch(`${base}/runs/${encodeURIComponent(id)}/pdf`, { headers: await authHeaders() });
       if (!response.ok)
         throw Object.assign(new Error('The PDF for this run is not saved'), { status: response.status });
       return new Uint8Array(await response.arrayBuffer());

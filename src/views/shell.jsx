@@ -52,6 +52,7 @@ import { TAB_ICON, TAB_KEY } from './tabs.js';
 import { KMOD } from '../lib/keys.js';
 import { cn } from '../lib/utils.js';
 import { useA } from '../lib/context.js';
+import { firmJoinCode, rotateJoinCode } from '../lib/api.js';
 
 const NAV = [
   ['home', HomeI, 'Home'],
@@ -290,6 +291,52 @@ export function MobileNav() {
   );
 }
 
+/** The firm's join code for its owners and admins, to share with colleagues. Others see nothing. */
+function JoinCode({ orgId }) {
+  const [code, setCode] = React.useState(null);
+  const [copied, setCopied] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    firmJoinCode(orgId)
+      .then(value => alive && setCode(value))
+      .catch(() => alive && setCode(null));
+    return () => {
+      alive = false;
+    };
+  }, [orgId]);
+  if (!code) return null;
+  return (
+    <div className="mx-1 mb-1 rounded-xl bg-fg/4 px-2.5 py-2">
+      <div className="text-[11.5px] text-fg3">Colleagues join with this code</div>
+      <div className="mt-1 flex items-center gap-2">
+        <b className="flex-1 font-mono text-[14px] tracking-wider">{code}</b>
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={async event => {
+            event.preventDefault();
+            await navigator.clipboard?.writeText(code).catch(() => {});
+            setCopied(true);
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={async event => {
+            event.preventDefault();
+            setCode(await rotateJoinCode(orgId));
+            setCopied(false);
+          }}
+        >
+          New code
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------------------------------------------------------- header */
 export function Header({ wide }) {
   const { d, ws, setWs, go, setSbOpen, theme, toggleTheme, dock, toggleAsk, setPal, setKeys, focusComposer, live } =
@@ -505,6 +552,7 @@ export function Header({ wide }) {
                   {live.status === 'error' ? 'Supabase unreachable, showing demo data' : 'Synced with Supabase'}
                 </span>
               </div>
+              {real && live.orgId && <JoinCode orgId={live.orgId} />}
               <DropdownItem onSelect={() => live.signOut()}>
                 <LogOut size={15} className="text-fg3" />
                 <span className="flex-1">Sign out</span>

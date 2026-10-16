@@ -285,6 +285,23 @@ function serveStatic(res, url) {
   fs.createReadStream(file).pipe(res);
 }
 
+/**
+ * An engine shared with a team: every analyst can build reports, only its admins can change the model or its
+ * key, and nobody reads the runs saved on this machine (shared runs live in Supabase, under each firm's RLS).
+ */
+function restrictShared(req, url, who) {
+  if (url.pathname.startsWith('/engine/runs'))
+    throw new HttpError(403, 'Saved runs are kept in your firm’s workspace when the engine is shared');
+  if (req.method === 'PUT' && url.pathname === '/engine/settings') {
+    const admins = String(process.env.VULT_ENGINE_ADMINS ?? '')
+      .split(',')
+      .map(email => email.trim().toLowerCase())
+      .filter(Boolean);
+    if (who?.kind !== 'token' && !admins.includes(String(who?.email ?? '').toLowerCase()))
+      throw new HttpError(403, 'Only the engine’s admins can change the model or its key');
+  }
+}
+
 /* ------------------------------------------------------------------ server */
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -307,6 +324,7 @@ const server = http.createServer(async (req, res) => {
     }
     // Deployed engines check who is calling; on a laptop this returns null.
     who = await authenticate(req);
+    if (process.env.VULT_ENGINE_ALLOW_REMOTE === '1') restrictShared(req, url, who);
     const handler = findRoute(req.method, url.pathname);
     if (!handler) throw new HttpError(404, 'Not found');
     const body = await handler(req, url);

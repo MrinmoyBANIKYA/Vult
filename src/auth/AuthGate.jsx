@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { isLive } from '../lib/supabase.js';
-import { auth, ensureDemoAccess, getProfile, myOrganizations } from '../lib/api.js';
+import { accessToken, auth, ensureDemoAccess, getProfile, myOrganizations } from '../lib/api.js';
+import { setEngineAuth } from '../lib/engine-client.js';
 import { SessionCtx, DEMO_SESSION } from './session.js';
 import { SignIn } from './SignIn.jsx';
 import { FirmSetup } from './FirmSetup.jsx';
@@ -14,6 +15,9 @@ export function AuthGate({ children }) {
   if (!isLive) return <SessionCtx.Provider value={DEMO_SESSION}>{children}</SessionCtx.Provider>;
   return <LiveGate>{children}</LiveGate>;
 }
+
+// Signed-in calls to the engine carry the user's access token.
+if (isLive) setEngineAuth(accessToken);
 
 function LiveGate({ children }) {
   const [session, setSession] = React.useState(undefined); // undefined while we ask Supabase
