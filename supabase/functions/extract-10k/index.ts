@@ -8,7 +8,7 @@
 import { json, preflight, readJson } from '../_shared/http.ts';
 import { userClient } from '../_shared/supabase.ts';
 import { LlmError, completeJson, configFromEnv } from '../_shared/llm.js';
-import { STATEMENT_KEYS, cleanMapping, mappingPrompt, mappingSchema } from '../_shared/statements.js';
+import { STATEMENT_KEYS, cleanFeedback, cleanMapping, mappingPrompt, mappingSchema } from '../_shared/statements.js';
 
 interface Row {
   id: number;
@@ -28,7 +28,7 @@ Deno.serve(async req => {
   } = await supabase.auth.getUser();
   if (authError || !user) return json({ error: 'Sign in to extract an annual report' }, 401);
 
-  const body = await readJson<{ statement?: unknown; rows?: unknown }>(req);
+  const body = await readJson<{ statement?: unknown; rows?: unknown; feedback?: unknown }>(req);
   const statement = typeof body?.statement === 'string' ? body.statement : '';
   if (!(statement in STATEMENT_KEYS)) return json({ error: 'Unknown statement' }, 400);
   if (!Array.isArray(body?.rows) || !body.rows.length || body.rows.length > 250) return json({ error: 'Send between 1 and 250 rows' }, 400);
@@ -41,7 +41,7 @@ Deno.serve(async req => {
 
   const config = configFromEnv((name: string) => Deno.env.get(name));
   try {
-    const { system, user: prompt } = mappingPrompt(statement, rows);
+    const { system, user: prompt } = mappingPrompt(statement, rows, cleanFeedback(body?.feedback));
     const reply = await completeJson(config, { system, user: prompt, schema: mappingSchema(statement), maxTokens: 1500 });
     const mapping = cleanMapping(statement, reply?.mapping ?? reply, rows.map(row => row.id));
     return json({ mapping, provider: config.provider, label: config.provider, model: config.model, local: false });

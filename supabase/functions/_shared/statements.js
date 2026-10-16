@@ -10,7 +10,7 @@ export const STATEMENT_KEYS = {
     revenue: ['Revenue', 'Total revenue, turnover or total net sales for the whole company (the top-line total, not a segment). For a bank, total operating income; for an insurer, total revenue or insurance revenue.', /revenue|sales|turnover|total (operating )?income/i],
     cost_of_revenue: ['Cost of revenue', 'Total cost of revenue or cost of sales (the total line).', /cost/i],
     gross_profit: ['Gross profit', 'Gross profit or gross margin, as an amount.', /gross/i],
-    operating_expenses: ['Operating expenses', 'Total operating expenses.', /operating expenses|costs and expenses|total expenses|administrative/i],
+    operating_expenses: ['Operating expenses', 'Total operating expenses. If no total is printed, each operating expense line between gross profit and operating income (research and development, selling, marketing, general and administrative). Not cost of revenue.', /operating expenses|costs and expenses|total expenses|administrative|research|development|selling|marketing|distribution/i, true],
     exceptional_items: ['Exceptional items', 'Each exceptional, adjusting, special, restructuring or impairment line printed on its own above operating profit. Not totals.', /exceptional|adjusting|special|restructuring|impairment|non-?recurring|acquisition/i, true],
     operating_income: ['Operating income', 'Operating income, income from operations or operating profit (statutory, after any exceptional items).', /operat/i],
     interest_expense: ['Interest expense', 'Interest expense or finance costs, only if printed as its own line.', /interest|finance (costs?|expense)/i],
@@ -43,7 +43,7 @@ export const STATEMENT_KEYS = {
     net_income: ['Net income', 'Net income or profit for the year at the top of operating activities.', /net (income|earnings|loss)|profit/i],
     depreciation_amortization: ['D&A', 'Depreciation and amortisation (the combined line, or depreciation if that is the only line).', /depreciation|amorti/i],
     share_based_comp: ['Share-based pay', 'Share-based payment or stock-based compensation expense added back.', /share-?based|stock-?based|equity-?settled/i],
-    operating_cash_flow: ['Operating cash flow', 'Net cash provided by (used in) operating activities, or net cash from operating activities after tax.', /operating/i],
+    operating_cash_flow: ['Operating cash flow', 'Net cash provided by (used in) operating activities, or net cash from operating activities after tax.', /operating|operations/i],
     capital_expenditure: ['Capital expenditure', 'Purchases of property, plant and equipment (capital expenditure).', /property|equipment|capital expenditure|pp&e|tangible/i],
     investing_cash_flow: ['Investing cash flow', 'Net cash provided by (used in) investing activities.', /investing/i],
     dividends_paid: ['Dividends paid', 'Dividends paid to shareholders of the company.', /dividend/i],
@@ -75,7 +75,14 @@ export function mappingSchema(statement) {
 }
 
 /** Prompt that asks a model to classify numbered statement rows. Rows are { id, section, label, values }. */
-export function mappingPrompt(statement, rows) {
+/** Cleans the problems a code check found in a first mapping, for a second attempt. */
+export const cleanFeedback = feedback =>
+  (Array.isArray(feedback) ? feedback : [])
+    .map(line => String(line).slice(0, 300))
+    .filter(Boolean)
+    .slice(0, 12);
+
+export function mappingPrompt(statement, rows, feedback = []) {
   const keys = STATEMENT_KEYS[statement];
   const system = [
     `You classify rows from a company's ${STATEMENT_NAMES[statement]} into standard line items.`,
@@ -92,7 +99,16 @@ export function mappingPrompt(statement, rows) {
   const user = rows
     .map(row => `${row.id} | ${row.section ? `[${row.section}] ` : ''}${row.label} | ${row.values.join(' | ')}`)
     .join('\n');
-  return { system, user: `Rows:\n${user}` };
+  const problems = cleanFeedback(feedback);
+  const retry = problems.length
+    ? [
+        '',
+        'A first answer was checked against the printed figures and these problems were found:',
+        ...problems.map(line => `- ${line}`),
+        'Answer again, fixing them. Leave a key empty when the statement does not print that line.'
+      ].join('\n')
+    : '';
+  return { system, user: `Rows:\n${user}${retry}` };
 }
 
 /** Keeps only valid ids for known keys, and at most one row for single-row keys. */

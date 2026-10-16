@@ -53,7 +53,10 @@ export default defineConfig({
     // The Vult engine (npm run engine) runs model calls and workbook recalculation.
     proxy: { '/engine': { target: `http://127.0.0.1:${process.env.VULT_ENGINE_PORT || 8787}`, changeOrigin: false } }
   },
-  preview: { port: 4173 },
+  preview: {
+    port: 4173,
+    proxy: { '/engine': { target: `http://127.0.0.1:${process.env.VULT_ENGINE_PORT || 8787}`, changeOrigin: false } }
+  },
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 700,

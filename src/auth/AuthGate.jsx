@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { isLive } from '../lib/supabase.js';
-import { auth, ensureDemoAccess, getProfile } from '../lib/api.js';
+import { auth, ensureDemoAccess, getProfile, myOrganizations } from '../lib/api.js';
 import { SessionCtx, DEMO_SESSION } from './session.js';
 import { SignIn } from './SignIn.jsx';
+import { FirmSetup } from './FirmSetup.jsx';
 import { Mark } from '../components/shared.jsx';
 
 /**
@@ -16,7 +17,7 @@ export function AuthGate({ children }) {
 
 function LiveGate({ children }) {
   const [session, setSession] = React.useState(undefined); // undefined while we ask Supabase
-  const [ready, setReady] = React.useState({ userId: null, profile: null });
+  const [ready, setReady] = React.useState({ userId: null, profile: null, orgs: null });
 
   React.useEffect(() => {
     let alive = true;
@@ -29,29 +30,42 @@ function LiveGate({ children }) {
   }, []);
 
   const userId = session ? session.user.id : null;
+  const [loads, setLoads] = React.useState(0);
   React.useEffect(() => {
     if (!userId) return undefined;
     let alive = true;
     ensureDemoAccess()
       .catch(err => console.warn('[vult] demo access', err))
-      .then(() => getProfile(userId))
-      .catch(() => null)
-      .then(profile => alive && setReady({ userId, profile }));
+      .then(() => Promise.all([getProfile(userId).catch(() => null), myOrganizations().catch(() => null)]))
+      .then(([profile, orgs]) => alive && setReady({ userId, profile, orgs }));
     return () => {
       alive = false;
     };
-  }, [userId]);
+  }, [userId, loads]);
 
+  // The user's own firm decides which workspace opens first.
+  const orgs = ready.orgs ?? [];
+  const home = orgs.find(org => !org.is_demo) ?? orgs[0];
   const value = React.useMemo(
     () =>
       session
-        ? { live: true, session, profile: ready.profile, email: session.user.email, signOut: () => auth.signOut() }
+        ? {
+            live: true,
+            session,
+            profile: ready.profile,
+            email: session.user.email,
+            homeRegion: home?.region ?? null,
+            signOut: () => auth.signOut()
+          }
         : null,
-    [session, ready.profile]
+    [session, ready.profile, home?.region]
   );
 
   if (session === undefined || (session && ready.userId !== userId)) return <Splash />;
   if (!session) return <SignIn />;
+  // A null list means the lookup failed; let the app open and show its own error rather than block here.
+  if (ready.orgs && !ready.orgs.length)
+    return <FirmSetup email={session.user.email} onCreated={() => setLoads(n => n + 1)} />;
   return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;
 }
 

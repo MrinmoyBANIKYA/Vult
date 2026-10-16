@@ -87,7 +87,7 @@ const prefersReducedMotion = () => window.matchMedia && window.matchMedia('(pref
 
 export default function App() {
   const sessionInfo = useSession();
-  const [ws, setWsRaw] = React.useState('uk');
+  const [ws, setWsRaw] = React.useState(() => sessionInfo.homeRegion || 'uk');
   const live = useLiveWorkspace(ws, sessionInfo.live);
   const liveData = live.data;
 

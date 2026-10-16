@@ -32,8 +32,12 @@ const STATEMENTS = [
   },
   {
     key: 'cashflow',
-    heading: /statements? of (consolidated )?cash flows?|cash flow statements?/i,
-    indicators: [/operating activities/i, /investing activities/i, /financing activities/i],
+    heading: /statements? of (consolidated )?cash flows?|cash flows? statements?/i,
+    indicators: [
+      /operating activities|net cash (from|provided by|used in) operations/i,
+      /investing activities|net cash (from|provided by|used in) investing/i,
+      /financing activities|net cash (from|provided by|used in) financing/i
+    ],
     closing: /end of (the )?(year|period)|ending balance|closing cash|cash equivalents at \d{1,2} [a-z]+/i
   }
 ];
@@ -85,6 +89,10 @@ const isCurrency = cell => /^[$£€]$/.test(cell);
 /** Splits a line into its label and printed value cells. */
 export function splitRow(line) {
   let cells = line
+    // Dot leaders ("Net sales . . . . .   237,710") are a column gap.
+    .replace(/(?:\s*\.){3,}\s*/g, '   ')
+    // A currency sign standing alone is a column marker, however tightly it is set ("64,699 $ 72,732 $   71,074").
+    .replace(/(^|\s)[$£€](?=\s|$)/g, '   ')
     .split(/\s{3,}/)
     .map(cell => cell.trim())
     .filter(cell => cell && !isCurrency(cell));
@@ -199,6 +207,13 @@ export function selectStatementPages(pageTexts) {
  * A note reference printed before the figures is kept as `note`; `offset` counts it so column indexes
  * still match every printed cell on the line.
  */
+// A capitals row continues the capitals line above it when it is one word, or the line above ends mid-phrase.
+const wrapsCaps = (heading, label) =>
+  Boolean(label) &&
+  label === label.toUpperCase() &&
+  /[A-Z]/.test(label) &&
+  (!/\s/.test(label) || /\b(AND|OF|ON|FOR|THE|TO|IN|FROM|AT|BY|WITH|CASH|NET)$/.test(heading));
+
 export function statementRows(pages, startId = 1) {
   const rows = [];
   let id = startId;
@@ -208,8 +223,12 @@ export function statementRows(pages, startId = 1) {
     let section = '';
     let carry = '';
     let carryQuote = '';
+    // The last line read as a capitals heading, in case it was the first half of a wrapped capitals label.
+    let caps = null;
     for (const line of linesOf(text)) {
       if (!line.trim()) continue;
+      const lastCaps = caps;
+      caps = null;
       // A header holds years and words ("Years ended", "2024   2023", "Notes 2025 £m") but no other figures.
       const years = headerYears(line);
       if (years) {
@@ -238,10 +257,18 @@ export function statementRows(pages, startId = 1) {
           label = label.slice(0, ref.index).trim();
         }
       }
+      // A lone figure set tight against the label of a multi-year statement is part of a wrapped label
+      // ("shares authorized 24,000; outstanding 7,432" then "and 7,464   93,718   86,939").
+      if (periods?.length > 1 && cells.length === 1 && !/\s{3,}/.test(line.trim())) {
+        carry = line.trim();
+        carryQuote = line;
+        continue;
+      }
       if (!cells.length) {
         // A label without values is either a section heading or the first half of a wrapped label.
         if (/[a-z]/i.test(line)) {
           if (/:\s*$/.test(line) || line === line.toUpperCase()) {
+            if (!/:\s*$/.test(line)) caps = { line, section };
             section = line.replace(/:\s*$/, '').trim().slice(0, 60);
             carry = '';
             carryQuote = '';
@@ -254,7 +281,12 @@ export function statementRows(pages, startId = 1) {
       }
       let fullLabel = label;
       let quote = line;
-      if (carry && (!label || /^[a-z(]/.test(label))) {
+      if (!carry && lastCaps && wrapsCaps(lastCaps.line.trim(), label)) {
+        // "EFFECT OF EXCHANGE RATE CHANGES ON CASH AND CASH" then "EQUIVALENTS . . .   (15)".
+        fullLabel = `${lastCaps.line.trim()} ${label}`;
+        quote = `${lastCaps.line}\n${line}`;
+        section = lastCaps.section;
+      } else if (carry && (!label || /^[a-z(]/.test(label))) {
         fullLabel = `${carry} ${label}`.trim();
         quote = `${carryQuote}\n${line}`;
       } else if (carry) {
@@ -308,6 +340,8 @@ export function detectUnit(text) {
 
 const COMPANY_SUFFIX =
   /\b(plc|p\.l\.c\.|limited|ltd|inc\.?|incorporated|corporation|corp\.?|holdings|group|n\.v\.|s\.a\.|ag|se|llc)\s*$/i;
+const FULL_NAME =
+  /\b[A-Z][A-Za-z&'-]+(?: [A-Z][A-Za-z&'-]+){0,3},? (?:Corporation|Incorporated|Inc\.|plc|PLC|Limited|N\.V\.|S\.A\.|SE|AG)(?![A-Za-z])/g;
 const YEAR_END =
   /(?:fiscal\s+)?(?:year|period|5[23]\s*weeks?)\s+ended\s+(\d{1,2}\s+[A-Z][a-z]+\s+\d{4}|[A-Z][a-z]+\s*\d{1,2}\s*,\s*\d{4})/i;
 
@@ -318,8 +352,13 @@ const YEAR_END =
  */
 export function detectCover(pageTexts, extraPages = []) {
   const first = linesOf(pageTexts?.[1] ?? '');
-  const exact = first.findIndex(line => /exact name of (the )?registrant/i.test(line));
-  let company = exact > 0 ? first[exact - 1].trim() : '';
+  // Annual reports often wrap the 10-K, so its cover page can sit a few pages in.
+  let company = '';
+  for (let page = 1; page <= 20 && !company; page += 1) {
+    const lines = linesOf(pageTexts?.[page] ?? '');
+    const exact = lines.findIndex(line => /exact name of (the )?registrant/i.test(line));
+    if (exact > 0) company = lines[exact - 1].trim();
+  }
   if (!company || company.length > 80) company = '';
   let yearEnd =
     /fiscal year ended\s+([A-Z][a-z]+\s*\d{1,2}\s*,\s*\d{4})/i.exec(first.join(' '))?.[1]?.replace(/\s*,\s*/, ', ') ??
@@ -336,6 +375,14 @@ export function detectCover(pageTexts, extraPages = []) {
           !/annual report|accounts|contents|form 10-k/i.test(line)
       ) ?? '';
   }
+  if (!company) {
+    // Reports without a 10-K cover still name the company in full throughout ("Microsoft Corporation").
+    const counts = new Map();
+    for (const text of Object.values(pageTexts ?? {}))
+      for (const [name] of String(text).matchAll(FULL_NAME)) counts.set(name, (counts.get(name) ?? 0) + 1);
+    const [best] = [...counts].sort((a, b) => b[1] - a[1]);
+    if (best?.[1] >= 3) company = best[0];
+  }
   if (!yearEnd) {
     for (const text of [...opening, ...extraPages.map(page => page?.text ?? page)]) {
       const found = YEAR_END.exec(String(text ?? '').replace(/\s+/g, ' '));
@@ -345,19 +392,23 @@ export function detectCover(pageTexts, extraPages = []) {
       }
     }
   }
+  // "SEPTEMBER 3, 2023" reads as "September 3, 2023".
+  yearEnd = yearEnd.replace(/[A-Z]{3,}/g, word => word[0] + word.slice(1).toLowerCase());
   return { company, yearEnd };
 }
 
 /** Headings of the business and risk sections in a 10-K (Item 1, Item 1A) and in a UK annual report. */
 export const BUSINESS_HEADINGS = [
-  [/^item\s*1\.?\s*business\b/i, 'Item 1 (Business)'],
+  [/^item\s*1\s*[.:—–-]?\s*business\b/i, 'Item 1 (Business)'],
   [/^(our )?business model\b/i, 'Business model'],
   [/^(business|strategic) (overview|review)\b/i, 'Business overview'],
   [/^strategic report\b/i, 'Strategic report'],
-  [/^(chief executive|ceo|chair|chairman)('|’)?s? (review|statement)\b/i, "Chief executive's review"]
+  [/^(chief executive|ceo|chair|chairman)('|’)?s? (review|statement)\b/i, "Chief executive's review"],
+  // Annual reports that reprint the 10-K without item numbers head it "BUSINESS".
+  [/^business$/i, 'Business']
 ];
 export const RISK_HEADINGS = [
-  [/^item\s*1a\.?\s*risk\s*factors\b/i, 'Item 1A (Risk Factors)'],
+  [/^item\s*1a\s*[.:—–-]?\s*risk\s*factors\b/i, 'Item 1A (Risk Factors)'],
   [/^principal risks( and uncertainties)?\b/i, 'Principal risks and uncertainties'],
   [/^risk factors\b/i, 'Risk factors']
 ];
@@ -400,6 +451,56 @@ export function findSection(pageTexts, headings, maxChars) {
   return { text: '', pages: [], name: '' };
 }
 
+/**
+ * Problems code can see in a model's row mapping: a row whose printed label does not fit its line item, and
+ * reported totals that fail to tie. They go back to the model for one more attempt; nothing here trusts it.
+ */
+export function mappingProblems(statement, rows, mapping, unit) {
+  const byId = new Map(rows.map(row => [row.id, row]));
+  const problems = [];
+  for (const [key, ids] of Object.entries(mapping ?? {})) {
+    const spec = STATEMENT_KEYS[statement]?.[key];
+    for (const id of ids ?? []) {
+      const row = byId.get(id);
+      if (row && spec?.[2] && !spec[2].test(row.label))
+        problems.push(`${key}: row ${id} "${row.label}" does not read as ${spec[0].toLowerCase()}.`);
+    }
+  }
+  const { facts } = resolveFacts(statement, rows, mapping, unit);
+  const sum = (key, period) => {
+    const parts = new Map(
+      facts.filter(f => f.key === key && f.period === period).map(f => [f.part ?? 0, Math.abs(f.value)])
+    );
+    return parts.size ? [...parts.values()].reduce((a, b) => a + b, 0) : null;
+  };
+  const ties = (a, b) => Math.abs(a - b) <= Math.max(1, Math.abs(b) * 1e-3);
+  const periods = [...new Set(facts.map(f => f.period))];
+  const identities =
+    statement === 'income'
+      ? [
+          [['revenue', '-cost_of_revenue'], 'gross_profit'],
+          [['gross_profit', '-operating_expenses'], 'operating_income', ['-exceptional_items']]
+        ]
+      : statement === 'balance'
+        ? [[['total_assets'], 'total_liabilities_and_equity']]
+        : [];
+  for (const [terms, total, optional = []] of identities) {
+    const keyOf = term => term.replace(/^-/, '');
+    const value = (list, period) =>
+      list.reduce((acc, term) => acc + (term.startsWith('-') ? -1 : 1) * (sum(keyOf(term), period) ?? 0), 0);
+    for (const period of periods) {
+      const target = sum(total, period);
+      if (target == null || terms.some(term => sum(keyOf(term), period) == null)) continue;
+      if (ties(value(terms, period), target) || ties(value([...terms, ...optional], period), target)) continue;
+      problems.push(
+        `${terms.map(keyOf).join(' and ')} do not reconcile to ${total} for ${period}. Check those rows, and leave ${total === 'gross_profit' ? 'gross_profit' : 'a key'} empty if the statement does not print it.`
+      );
+      break;
+    }
+  }
+  return problems;
+}
+
 /** Turns a cleaned row mapping into facts, one per row and period, plus issues for rows that could not be aligned. */
 export function resolveFacts(statement, rows, mapping, unit) {
   const byId = new Map(rows.map(row => [row.id, row]));
@@ -408,7 +509,10 @@ export function resolveFacts(statement, rows, mapping, unit) {
   for (const [key, ids] of Object.entries(mapping ?? {})) {
     const spec = STATEMENT_KEYS[statement][key];
     if (!spec) continue;
-    for (const [index, id] of ids.entries()) {
+    // A total picked alongside its own parts would count them twice; the printed total wins.
+    const totals = spec[3] && ids.length > 1 ? ids.filter(id => /^total\b/i.test(byId.get(id)?.label ?? '')) : [];
+    const picked = totals.length ? totals.slice(0, 1) : ids;
+    for (const [index, id] of picked.entries()) {
       const row = byId.get(id);
       if (!row) continue;
       if (!row.periods) {

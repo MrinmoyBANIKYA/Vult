@@ -33,7 +33,7 @@ export function engineClient(base = '/engine') {
     saveSettings: settings => call('PUT', '/settings', settings),
     models: provider => call('GET', `/models?provider=${encodeURIComponent(provider)}`),
     test: () => call('POST', '/test', {}),
-    mapRows: (statement, rows) => call('POST', '/map-rows', { statement, rows }),
+    mapRows: (statement, rows, feedback) => call('POST', '/map-rows', { statement, rows, feedback }),
     narrative: input => call('POST', '/narrative', input),
     recalc: (xlsxBase64, cells) => call('POST', '/recalc', { xlsx: xlsxBase64, cells }),
     quote: symbol => call('GET', `/market/quote?symbol=${encodeURIComponent(symbol)}`),

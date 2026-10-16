@@ -13,6 +13,7 @@ import {
   detectCover,
   detectUnit,
   findSection,
+  mappingProblems,
   resolveFacts,
   selectStatementPages,
   statementRows
@@ -24,6 +25,8 @@ import { buildFinancialModel, buildFinancialWorkbook, detectSector, isFinancial 
 import { buildModelWorkbook } from './workbook.js';
 import { buildMemo, buildTearSheet } from './memo.js';
 import { toBase64 } from './engine-client.js';
+
+const STATEMENT_TITLE = { income: 'Income statement', balance: 'Balance sheet', cashflow: 'Cash flow' };
 
 export const STEPS = [
   ['locate', 'Find the financial statements'],
@@ -153,15 +156,21 @@ export async function runPipeline({
     const rows = statementRows(own, nextId);
     nextId += rows.length;
     if (!rows.length) throw new Error(`No rows were found on the ${statement} pages.`);
-    onStep(
-      'classify',
-      'running',
-      `${statement === 'cashflow' ? 'Cash flow' : statement === 'income' ? 'Income statement' : 'Balance sheet'}: ${rows.length} rows`
-    );
-    const reply = await llm.mapRows(
-      statement,
-      rows.map(row => ({ id: row.id, section: row.section, label: row.label, values: row.printed }))
-    );
+    onStep('classify', 'running', `${STATEMENT_TITLE[statement]}: ${rows.length} rows`);
+    const sent = rows.map(row => ({ id: row.id, section: row.section, label: row.label, values: row.printed }));
+    let reply = await llm.mapRows(statement, sent);
+    // When code finds problems in the answer, the model gets one more attempt with them; code keeps the
+    // answer with fewer problems.
+    const problems = mappingProblems(statement, rows, reply.mapping, unit);
+    if (problems.length) {
+      onStep('classify', 'running', `${STATEMENT_TITLE[statement]}: rechecking ${problems.length} problems`);
+      try {
+        const second = await llm.mapRows(statement, sent, problems);
+        if (mappingProblems(statement, rows, second.mapping, unit).length < problems.length) reply = second;
+      } catch {
+        /* the first answer stands, and the Assayer flags its problems */
+      }
+    }
     llmInfo = { provider: reply.provider, label: reply.label, model: reply.model, local: reply.local };
     // Rows and the model's own mapping are kept, so analyst corrections can be replayed over them later.
     extracted.statements[statement] = { rows, mapping: reply.mapping };

@@ -33,14 +33,15 @@ pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
 ).href;
 
 async function readPdf(file) {
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(file)), useSystemFonts: true }).promise;
+  const task = pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(file)), useSystemFonts: true });
+  const doc = await task.promise;
   const pageTexts = {};
   for (let n = 1; n <= doc.numPages; n += 1) {
     const page = await doc.getPage(n);
     pageTexts[n] = linesToText(pageLines((await page.getTextContent()).items));
     page.cleanup();
   }
-  await doc.destroy();
+  await task.destroy();
   return pageTexts;
 }
 

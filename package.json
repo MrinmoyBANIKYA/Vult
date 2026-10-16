@@ -12,6 +12,7 @@
     "dev": "vite",
     "engine": "node --watch-path=server --watch-path=supabase/functions/_shared server/index.js",
     "build": "vite build",
+    "report": "node scripts/report.mjs",
     "start": "vite build && node server/index.js",
     "preview": "vite preview",
     "test": "node --test \"src/lib/*.test.js\"",

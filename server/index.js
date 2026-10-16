@@ -11,6 +11,7 @@ import path from 'node:path';
 import { PROVIDERS, LlmError, completeJson, isLocal, listModels } from '../supabase/functions/_shared/llm.js';
 import {
   STATEMENT_KEYS,
+  cleanFeedback,
   cleanMapping,
   mappingPrompt,
   mappingSchema,
@@ -138,7 +139,7 @@ const routes = {
   },
 
   'POST /engine/map-rows': async req => {
-    const { statement, rows } = await readJson(req);
+    const { statement, rows, feedback } = await readJson(req);
     if (!STATEMENT_KEYS[statement]) throw new HttpError(400, 'Unknown statement');
     if (!Array.isArray(rows) || !rows.length || rows.length > 250)
       throw new HttpError(400, 'Send between 1 and 250 rows');
@@ -150,7 +151,7 @@ const routes = {
     }));
     const config = activeConfig();
     const started = Date.now();
-    const { system, user } = mappingPrompt(statement, clean);
+    const { system, user } = mappingPrompt(statement, clean, cleanFeedback(feedback));
     const reply = await queues.model.run(() =>
       completeJson(config, {
         system,

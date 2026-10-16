@@ -31,6 +31,16 @@ export async function getProfile(userId) {
   return must(await supabase.from('profiles').select('full_name, title').eq('id', userId).maybeSingle());
 }
 
+/** The firms this account belongs to, oldest first. */
+export async function myOrganizations() {
+  return must(await supabase.from('organizations').select('id, name, region, is_demo').order('created_at'));
+}
+
+/** Sets up a firm with the signed-in user as its owner. Returns the new organisation's id. */
+export async function createOrganization(name, region) {
+  return must(await supabase.rpc('create_organization', { p_name: name, p_region: region }));
+}
+
 /** Gives a new account access to the seeded demo workspaces. Safe to call on every sign-in. */
 export async function ensureDemoAccess() {
   return must(await supabase.rpc('join_demo_workspaces'));
@@ -43,6 +53,8 @@ export async function loadWorkspace(region) {
       .from('organizations')
       .select('id, slug, name, region')
       .eq('region', region)
+      // The user's own firm before any demo workspace in the same region.
+      .order('is_demo')
       .order('created_at')
       .limit(1)
       .maybeSingle()

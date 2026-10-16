@@ -15,7 +15,7 @@ const PROOF = [
   ]
 ];
 
-function Field({ id, label, ...props }) {
+export function Field({ id, label, ...props }) {
   return (
     <label htmlFor={id} className="flex flex-col gap-1.5">
       <span className="text-[12.5px] font-semibold text-fg2">{label}</span>
@@ -40,7 +40,7 @@ export function SignIn() {
     const { error, data } =
       mode === 'in'
         ? await auth.signIn(form.email, form.password)
-        : await auth.signUp(form.email, form.password, form.name.trim() || 'Master Mrin');
+        : await auth.signUp(form.email, form.password, form.name.trim());
     if (error) return setState({ busy: false, error: error.message, info: null });
     if (mode === 'up' && !data.session)
       return setState({ busy: false, error: null, info: 'Check your inbox to confirm your email, then sign in.' });
@@ -103,9 +103,7 @@ export function SignIn() {
             {mode === 'in' ? 'Welcome back' : 'Create your account'}
           </h2>
           <p className="mt-1.5 text-[14px] text-fg2">
-            {mode === 'in'
-              ? 'Sign in to your deal team’s workspace.'
-              : 'You will join the two demo workspaces straight away.'}
+            {mode === 'in' ? 'Sign in to your deal team’s workspace.' : 'Then set up your firm’s private workspace.'}
           </p>
           <Segmented
             id="auth-mode"
@@ -127,7 +125,7 @@ export function SignIn() {
                 id="name"
                 label="Full name"
                 autoComplete="name"
-                placeholder="Master Mrin"
+                placeholder="Alex Morgan"
                 value={form.name}
                 onChange={set('name')}
               />

@@ -181,6 +181,21 @@ export function assay({
         { period }
       );
     }
+    const opex = g('income', 'operating_expenses', period);
+    const ebit = g('income', 'operating_income', period);
+    if ([gross, opex, ebit].every(Number.isFinite)) {
+      const exceptional = Math.abs(g('income', 'exceptional_items', period) ?? 0);
+      const passed = close(gross - Math.abs(opex), ebit) || close(gross - Math.abs(opex) - exceptional, ebit);
+      add(
+        'accounts',
+        'Gross profit less operating expenses equals operating income',
+        passed,
+        passed
+          ? `Ties for FY${period}.`
+          : `Differs by ${fmt(gross - Math.abs(opex) - ebit)} for FY${period}; check for an operating expense line that was missed or counted twice, or other operating income.`,
+        { period }
+      );
+    }
     const pretax = g('income', 'pretax_income', period);
     const tax = g('income', 'income_tax', period);
     const ni = g('income', 'net_income', period);
