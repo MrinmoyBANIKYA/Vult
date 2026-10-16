@@ -6,7 +6,7 @@
  * Handles US 10-K layouts and UK/IFRS annual reports: Notes columns, £m and £'000 units, 52-week and
  * "2024/25" periods, and group statements printed next to the parent company's own.
  */
-import { STATEMENT_KEYS } from '../../supabase/functions/_shared/statements.js';
+import { STATEMENT_KEYS, STATEMENT_NAMES } from '../../supabase/functions/_shared/statements.js';
 
 const STATEMENTS = [
   {
@@ -84,6 +84,8 @@ const isValueCell = cell => {
   const raw = String(cell).replace(/\s/g, '');
   // "31," is the end of a date and "$10,162)" the end of a wrapped label, not printed figures.
   if (raw.endsWith(',') || (raw.match(/\(/g) ?? []).length !== (raw.match(/\)/g) ?? []).length) return false;
+  // Thousands come in groups of three ("2,161,735.8"); "6, 22, 34" is a list of note references.
+  if (raw.includes(',') && !/^\(?-?[$£€]?\d{1,3}(,\d{3})+(\.\d+)?[pc]?\)?[pc]?$/.test(raw)) return false;
   return NUMBER_CELL.test(raw) || DASH_CELL.test(raw);
 };
 const isCurrency = cell => /^[$£€]$/.test(cell);
@@ -211,9 +213,9 @@ export function selectStatementPages(pageTexts) {
         linesOf(prev.text).some(line =>
           new RegExp(`^\\s*((the )?(consolidated|group) )?(${statement.heading.source})[a-z ]*\\s*$`, 'i').test(line)
         );
+      // Printed filings can repeat the title on every page of a long statement, so keep stepping back.
       if (!continued && !titled) break;
       chosen.unshift(prev);
-      if (titled) break;
     }
     for (const item of chosen) {
       const existing = selected.get(item.page);
@@ -256,7 +258,14 @@ export function statementRows(pages, startId = 1) {
   // A continuation page can print a row before its header, so it starts with the previous page's years.
   let lastPeriods = null;
   // Foreign filers add a convenience translation column ("NT$   NT$   US$"); it is not another year.
-  let convenience = false;
+  // Scanned up front: the marker line can sit on a later page than the first rows.
+  const markers = line => (CURRENCY_HEADER.test(line) ? line.trim().split(/\s+/) : null);
+  let convenience = pages.some(({ text }) =>
+    linesOf(text).some(line => {
+      const found = markers(line);
+      return Boolean(found && found.length > 1 && found.at(-1) !== found[0]);
+    })
+  );
   const headers = [];
   for (const { page, text } of pages) {
     let periods = lastPeriods;
@@ -270,7 +279,7 @@ export function statementRows(pages, startId = 1) {
       if (!line.trim()) continue;
       const lastCaps = caps;
       caps = null;
-      const currencies = CURRENCY_HEADER.test(line) ? line.trim().split(/\s+/) : null;
+      const currencies = markers(line);
       if (currencies) {
         convenience = currencies.length > 1 && currencies.at(-1) !== currencies[0];
         continue;
@@ -442,6 +451,9 @@ export function detectCover(pageTexts, extraPages = []) {
     const lines = linesOf(pageTexts?.[page] ?? '');
     const exact = lines.findIndex(line => /exact name of (the )?registrant/i.test(line));
     if (exact > 0) company = lines[exact - 1].trim();
+    // A 20-F names the registrant in its own script, then gives the English translation a few lines on.
+    const english = lines.findIndex(line => /translation of registrant/i.test(line));
+    if (company && !/[a-z]/i.test(company) && english > 0) company = lines[english - 1].split(/\s{3,}/)[0].trim();
   }
   if (!company || company.length > 80) company = '';
   let yearEnd =
@@ -476,6 +488,15 @@ export function detectCover(pageTexts, extraPages = []) {
       }
     }
   }
+  // Registrants set in capitals ("COCA COLA CO") read as names in a memo ("Coca Cola Co").
+  if (company && !/[a-z]/.test(company) && /[A-Z]{2}/.test(company))
+    company = company.replace(/[A-Z][A-Z'’.-]*/g, word =>
+      /^(AG|SE|SA|NV|N\.V\.|S\.A\.|LLC|LP|USA|UK|US)$/.test(word)
+        ? word
+        : word === 'PLC'
+          ? 'plc'
+          : word[0] + word.slice(1).toLowerCase()
+    );
   // "SEPTEMBER 3, 2023" reads as "September 3, 2023".
   yearEnd = yearEnd.replace(/[A-Z]{3,}/g, word => word[0] + word.slice(1).toLowerCase());
   return { company, yearEnd };
@@ -535,6 +556,25 @@ export function findSection(pageTexts, headings, maxChars) {
   return { text: '', pages: [], name: '' };
 }
 
+// Printed titles of the lines the model cannot do without, for pointing out an empty choice.
+const REQUIRED_TITLES = {
+  income: [
+    ['revenue', /^(total )?(net )?(revenues?|sales|turnover)$/i],
+    ['net_income', /^net (income|earnings|profit)( for the (year|period))?$/i]
+  ],
+  balance: [
+    ['total_assets', /^total assets$/i],
+    ['current_assets', /^total current assets$/i],
+    ['current_liabilities', /^total current liabilities$/i],
+    ['total_equity', /^total (stockholders['’]? |shareholders['’]? )?equity$/i],
+    ['cash_and_equivalents', /^cash and cash equivalents$/i]
+  ],
+  cashflow: [
+    ['operating_cash_flow', /^net cash (provided by|generated (by|from)|from|used in) operating activities$/i],
+    ['depreciation_amortization', /^depreciation and amorti[sz]ation$/i]
+  ]
+};
+
 /**
  * Problems code can see in a model's row mapping: a row whose printed label does not fit its line item, and
  * reported totals that fail to tie. They go back to the model for one more attempt; nothing here trusts it.
@@ -548,7 +588,17 @@ export function mappingProblems(statement, rows, mapping, unit) {
       const row = byId.get(id);
       if (row && spec?.[2] && !spec[2].test(`${row.section ?? ''} ${row.label}`))
         problems.push(`${key}: row ${id} "${row.label}" does not read as ${spec[0].toLowerCase()}.`);
+      if (row && !row.periods)
+        problems.push(
+          `${key}: row ${id} "${row.label}" has ${row.values.length} values that do not line up with the year columns; it is probably from another table. Choose the row in the ${STATEMENT_NAMES[statement]} itself.`
+        );
     }
+  }
+  // A line the model needs, left empty although a row reads exactly like it.
+  for (const [key, title] of REQUIRED_TITLES[statement] ?? []) {
+    if (mapping?.[key]?.length) continue;
+    const row = rows.find(r => r.periods && title.test(r.label.trim()));
+    if (row) problems.push(`${key}: nothing was chosen, but row ${row.id} "${row.label}" looks like it.`);
   }
   const { facts } = resolveFacts(statement, rows, mapping, unit);
   const sum = (key, period) => {

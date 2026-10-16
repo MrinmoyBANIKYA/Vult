@@ -8,7 +8,14 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { PROVIDERS, LlmError, completeJson, isLocal, listModels } from '../supabase/functions/_shared/llm.js';
+import {
+  ANSWERED_BY,
+  PROVIDERS,
+  LlmError,
+  completeJson,
+  isLocal,
+  listModels
+} from '../supabase/functions/_shared/llm.js';
 import {
   STATEMENT_KEYS,
   cleanFeedback,
@@ -89,6 +96,9 @@ async function readJson(req, maxBody = MAX_BODY) {
   }
 }
 
+/** The model a reply came from: a fallback when the chosen model's daily allowance ran out. */
+const answeredBy = (config, reply) => (reply?.[ANSWERED_BY] ? { ...config, model: reply[ANSWERED_BY] } : config);
+
 function describe(config) {
   return {
     provider: config.provider,
@@ -136,7 +146,7 @@ const routes = {
         maxTokens: 50
       })
     );
-    return { ...describe(config), ok: reply?.ok === true, ms: Date.now() - started };
+    return { ...describe(answeredBy(config, reply)), ok: reply?.ok === true, ms: Date.now() - started };
   },
 
   'POST /engine/map-rows': async req => {
@@ -166,7 +176,7 @@ const routes = {
       reply?.mapping ?? reply,
       clean.map(row => row.id)
     );
-    return { mapping, ...describe(config), ms: Date.now() - started };
+    return { mapping, ...describe(answeredBy(config, reply)), ms: Date.now() - started };
   },
 
   'POST /engine/narrative': async req => {
@@ -182,7 +192,7 @@ const routes = {
     return {
       business: stripFigures(reply?.business),
       risks: (Array.isArray(reply?.risks) ? reply.risks : []).map(stripFigures).filter(Boolean).slice(0, 6),
-      ...describe(config),
+      ...describe(answeredBy(config, reply)),
       ms: Date.now() - started
     };
   },

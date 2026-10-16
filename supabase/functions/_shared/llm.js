@@ -34,6 +34,8 @@ export const PROVIDERS = {
     baseUrl: 'https://api.groq.com/openai/v1',
     keyEnv: 'GROQ_API_KEY',
     defaultModel: 'openai/gpt-oss-120b',
+    // Each Groq model has its own daily allowance; these answer when the chosen one has used its share.
+    fallbackModels: ['openai/gpt-oss-20b', 'qwen/qwen3.8-27b'],
     jsonMode: 'object',
     note: 'Hosted, free tier with rate limits. Key from console.groq.com.'
   },
@@ -151,6 +153,9 @@ async function send(url, init, { timeoutMs = 300_000, attempts = 4 } = {}) {
 
     const body = await response.text();
     const detail = body.slice(0, 400);
+    // A daily allowance that is used up will not come back in seconds: fail now so a fallback model can answer.
+    if (response.status === 429 && /per day|\bTPD\b|\bRPD\b|daily/i.test(body))
+      throw Object.assign(new LlmError(`Model server returned 429: ${detail}`, 429), { quota: true });
     if ((response.status === 429 || response.status >= 500) && attempt < attempts) {
       const header = Number(response.headers.get('retry-after'));
       const hinted = Number(/try again in ([\d.]+)s/i.exec(body)?.[1]);
@@ -302,11 +307,24 @@ export async function completeText(config, { system, user, maxTokens = 1200, tem
     .trim();
 }
 
+/** The model that actually answered a completeJson call, set on its reply when a fallback stepped in. */
+export const ANSWERED_BY = Symbol('answeredBy');
+
 /** Structured completion: returns the parsed JSON object. */
 export async function completeJson(config, { system, user, schema, maxTokens = 2000, temperature = 0 }) {
   const cfg = resolveConfig(config);
-  const text = await WIRES[cfg.wire](cfg, { system, user, schema, maxTokens, temperature });
-  return parseJsonReply(text);
+  const models = [cfg.model, ...(PROVIDERS[cfg.provider].fallbackModels ?? []).filter(m => m !== cfg.model)];
+  for (const [index, model] of models.entries()) {
+    try {
+      const text = await WIRES[cfg.wire]({ ...cfg, model }, { system, user, schema, maxTokens, temperature });
+      const reply = parseJsonReply(text);
+      if (reply && typeof reply === 'object') reply[ANSWERED_BY] = model;
+      return reply;
+    } catch (error) {
+      if (!error.quota || index === models.length - 1) throw error;
+    }
+  }
+  throw new LlmError('No model answered', 502);
 }
 
 /** Lists the models a provider offers, for the model picker. */
