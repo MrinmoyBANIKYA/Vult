@@ -97,15 +97,16 @@ export default function App() {
   const firm = sessionInfo.firm ?? null;
   const d = React.useMemo(() => {
     const base = R[ws];
-    const name = profile && profile.full_name;
+    // A real firm's user is never shown the demo analyst's name, even before their profile exists.
+    const name = (profile && profile.full_name) || (firm && sessionInfo.email ? sessionInfo.email.split('@')[0] : '');
     if (!liveData && !name && !firm) return base;
     return {
       ...base,
       ...(liveData ? { engagements: liveData.engagements } : null),
       ...(firm ? { org: firm.name, orgMono: initials(firm.name), orgDesc: '' } : null),
-      ...(name ? { me: { ...base.me, n: name, r: profile.title || (firm ? 'Analyst' : base.me.r) } } : null)
+      ...(name ? { me: { ...base.me, n: name, r: profile?.title || (firm ? 'Analyst' : base.me.r) } } : null)
     };
-  }, [ws, liveData, profile, firm]);
+  }, [ws, liveData, profile, firm, sessionInfo.email]);
 
   const [dismissed, setDismissed] = React.useState([]);
   const [decided, setDecided] = React.useState([]);
