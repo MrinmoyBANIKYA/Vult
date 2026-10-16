@@ -92,7 +92,10 @@ test('joins wrapped capitals labels and labels that end in a figure', () => {
     'EFFECT OF EXCHANGE RATE CHANGES ON CASH AND CASH',
     'EQUIVALENTS . . . . . . . .   (15)   10',
     'Common stock – shares outstanding 7,432',
-    'and 7,464   93,718   86,939'
+    'and 7,464   93,718   86,939',
+    'Payments related to repurchases of common stock',
+    '(40,086)   (33,706)',
+    '45'
   ].join('\n');
   const rows = statementRows([{ page: 9, text }]);
   assert.deepEqual(
@@ -100,7 +103,8 @@ test('joins wrapped capitals labels and labels that end in a figure', () => {
     [
       ['Net income', [500, 400]],
       ['EFFECT OF EXCHANGE RATE CHANGES ON CASH AND CASH EQUIVALENTS', [-15, 10]],
-      ['Common stock – shares outstanding 7,432 and 7,464', [93718, 86939]]
+      ['Common stock – shares outstanding 7,432 and 7,464', [93718, 86939]],
+      ['Payments related to repurchases of common stock', [-40086, -33706]]
     ]
   );
   assert.equal(rows[0].section, 'OPERATING ACTIVITIES');

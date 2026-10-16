@@ -2,6 +2,7 @@
 // issuers), prints the filing to PDF with a local Chromium browser (Edge or Chrome) so the Filing desk reads
 // it exactly as it reads an uploaded PDF, and caches the PDF in .vult/cache/filings.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { execFile } from 'node:child_process';
@@ -45,7 +46,7 @@ export function printToPdf(browser, html, pdf) {
         '--headless=new',
         '--disable-gpu',
         '--no-pdf-header-footer',
-        `--user-data-dir=${path.join(DIR, '.browser')}`,
+        `--user-data-dir=${path.join(os.tmpdir(), 'vult-pdf-browser')}`,
         `--print-to-pdf=${pdf}`,
         `file:///${html.replace(/\\/g, '/')}`
       ],
@@ -70,9 +71,19 @@ export async function latestAnnualFiling(rawTicker) {
   const company = await secCompany(ticker);
   const cik = String(company.cik).padStart(10, '0');
   const { filings } = await (await sec(`https://data.sec.gov/submissions/CIK${cik}.json`)).json();
-  const recent = filings.recent;
-  const i = recent.form.findIndex(form => ANNUAL_FORMS.includes(form));
-  if (i < 0) throw new FilingError(404, `${ticker} has no 10-K, 20-F or 40-F in its recent filings`);
+  // Frequent filers (insider forms, prospectuses) push the 10-K out of the recent list into older pages.
+  let recent = filings.recent;
+  let i = recent.form.findIndex(form => ANNUAL_FORMS.includes(form));
+  for (const page of filings.files ?? []) {
+    if (i >= 0) break;
+    recent = await (await sec(`https://data.sec.gov/submissions/${page.name}`)).json();
+    i = recent.form.findIndex(form => ANNUAL_FORMS.includes(form));
+  }
+  if (i < 0)
+    throw new FilingError(
+      404,
+      `${company.name} (${ticker}) has not filed a 10-K, 20-F or 40-F on EDGAR. A newly formed holding company files under a new registrant; upload the predecessor's annual report instead.`
+    );
   const accession = recent.accessionNumber[i].replace(/-/g, '');
   const folder = `https://www.sec.gov/Archives/edgar/data/${Number(company.cik)}/${accession}/`;
   return {

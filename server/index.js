@@ -23,7 +23,7 @@ import { findSoffice, recalcWorkbook } from './recalc.js';
 import { deleteRun, getRun, listRuns, readPdf, savePdf, saveRun } from './runs.js';
 import { authenticate } from './auth.js';
 import { logRequest, queues } from './queue.js';
-import { beta, fundamentals, fx, peer, quote, riskFree } from './market.js';
+import { beta, fundamentals, fx, peer, quote, riskFree, searchCompanies } from './market.js';
 import { annualFilingPdf } from './filings.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -205,6 +205,7 @@ routes['GET /engine/market/fx'] = async (req, url) => fx(url.searchParams.get('f
 routes['GET /engine/market/peer'] = async (req, url) => peer(url.searchParams.get('ticker'));
 
 /* ------------------------------------------------------------------ real filings from SEC EDGAR */
+routes['GET /engine/companies'] = async (req, url) => searchCompanies(url.searchParams.get('q'));
 routes['GET /engine/filings/annual'] = async (req, url) => {
   const { filing, bytes } = await annualFilingPdf(url.searchParams.get('ticker'));
   return {

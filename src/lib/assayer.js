@@ -16,7 +16,13 @@ const close = (a, b, tolerance = Math.max(1, Math.abs(b) * 1e-4)) =>
 // Each entry is [statement, key, alternative keys that together stand in for it, hint when missing].
 const REQUIRED = [
   ['income', 'revenue'],
-  ['income', 'operating_income'],
+  [
+    'income',
+    'operating_income',
+    ['revenue', 'operating_expenses'],
+    null,
+    'is not printed; the model derives it as revenue less cost of revenue, operating expenses and exceptional items.'
+  ],
   ['income', 'pretax_income'],
   ['income', 'income_tax'],
   ['income', 'net_income'],
@@ -80,6 +86,26 @@ export function assay({
   const index = factIndex(facts);
   const periods = [...new Set(facts.map(f => f.period))].sort();
   const g = (statement, key, period) => index.get(statement, key, period);
+  // The label of a balance sheet row that prints `value`, read from the page text.
+  const balancePages = [...new Set(facts.filter(f => f.statement === 'balance').map(f => f.page))];
+  // What fills a gap between assets and liabilities plus equity: non-controlling interests the equity line
+  // left out, a printed line such as redeemable interests, or both. Null when nothing printed explains it.
+  const explainEquityGap = (gap, period) => {
+    const nci = Math.abs(g('balance', 'nci_equity', period) ?? 0);
+    if (nci && close(gap, nci)) return `non-controlling interests of ${fmt(nci)}`;
+    const row = printedBalanceRow(gap);
+    if (row) return `"${row}" of ${fmt(gap)}`;
+    const rest = nci && gap > nci ? printedBalanceRow(gap - nci) : null;
+    return rest ? `non-controlling interests of ${fmt(nci)} and "${rest}" of ${fmt(gap - nci)}` : null;
+  };
+  const printedBalanceRow = value => {
+    for (const page of balancePages)
+      for (const line of String(pageTexts[page] ?? '').split('\n')) {
+        const { label, cells } = splitRow(line);
+        if (label && cells.some(cell => close(parseCell(cell), value))) return label;
+      }
+    return null;
+  };
 
   // 1. Every figure is re-read from its cited page and column. A figure an analyst typed in must at least
   // appear on the page they cited.
@@ -134,7 +160,8 @@ export function assay({
     if (fact.source !== 'analyst') picked.set(`${fact.statement}:${fact.key}:${fact.rowId}`, fact);
   for (const fact of picked.values()) {
     const pattern = STATEMENT_KEYS[fact.statement]?.[fact.key]?.[2];
-    const passed = !pattern || pattern.test(fact.label);
+    // The heading a row sits under is part of what it means ("Earnings per share, diluted" over "Net income").
+    const passed = !pattern || pattern.test(`${fact.section ?? ''} ${fact.label}`);
     add(
       'label',
       'Row label fits the line item',
@@ -149,7 +176,9 @@ export function assay({
   // 3. Lines the model needs.
   const latest = periods.at(-1);
   const found = (statement, key) => facts.some(f => f.statement === statement && f.key === key);
-  for (const [statement, key, alternatives, hint] of FINANCIAL_SECTORS.has(sector) ? REQUIRED_FINANCIAL : REQUIRED) {
+  for (const [statement, key, alternatives, hint, derived] of FINANCIAL_SECTORS.has(sector)
+    ? REQUIRED_FINANCIAL
+    : REQUIRED) {
     const present = found(statement, key);
     const standIn = !present && alternatives?.every(other => found(statement, other));
     const name = STATEMENT_KEYS[statement][key][0];
@@ -159,9 +188,11 @@ export function assay({
       present || standIn,
       present
         ? `${name} found.`
-        : standIn
-          ? `${name} is not printed; it is the sum of ${alternatives.map(k => STATEMENT_KEYS[statement][k][0].toLowerCase()).join(' and ')}.`
-          : `${name} was not found in the ${statement} statement. Add it before relying on the model.${hint ? ` ${hint}` : ''}`
+        : standIn && derived
+          ? `${name} ${derived}`
+          : standIn
+            ? `${name} is not printed; it is the sum of ${alternatives.map(k => STATEMENT_KEYS[statement][k][0].toLowerCase()).join(' and ')}.`
+            : `${name} was not found in the ${statement} statement. Add it before relying on the model.${hint ? ` ${hint}` : ''}`
     );
   }
   for (const issue of issues) add('coverage', 'Row aligned to year columns', false, issue.detail, { page: issue.page });
@@ -290,13 +321,19 @@ export function assay({
     if (Number.isFinite(ta) && Number.isFinite(te) && (Number.isFinite(tl) || Number.isFinite(tle))) {
       const right = Number.isFinite(tl) ? tl + te : tle;
       const passed = close(ta, right);
+      // US filings print redeemable interests ("mezzanine" equity) between liabilities and equity; the
+      // grand total still equals assets and the gap is a printed line of its own.
+      const mezzanine =
+        !passed && Number.isFinite(tl) && close(ta, tle) && ta > right ? explainEquityGap(ta - right, period) : null;
       add(
         'accounts',
         'Balance sheet balances',
-        passed,
+        passed || Boolean(mezzanine),
         passed
           ? `Assets of ${fmt(ta)} equal liabilities and equity for FY${period}.`
-          : `Assets differ from liabilities and equity by ${fmt(ta - right)} for FY${period}. Check whether equity includes non-controlling interests.`,
+          : mezzanine
+            ? `Assets of ${fmt(ta)} equal liabilities, equity and ${mezzanine} for FY${period}.`
+            : `Assets differ from liabilities and equity by ${fmt(ta - right)} for FY${period}. Check whether equity includes non-controlling interests.`,
         { period }
       );
     }
@@ -344,13 +381,28 @@ export function assay({
     const bsCash = g('balance', 'cash_and_equivalents', period);
     if (Number.isFinite(end) && Number.isFinite(bsCash)) {
       const passed = close(end, bsCash);
+      // The cash flow's own label says it adds restricted cash, and its total is the larger one.
+      const restricted =
+        !passed &&
+        end > bsCash &&
+        facts.some(
+          f =>
+            f.statement === 'cashflow' && f.key === 'cash_ending' && f.period === period && /restricted/i.test(f.label)
+        );
+      // Banks define cash for the cash flow as two balance sheet lines ("cash and due from banks" plus
+      // "deposits with banks"): the gap is then printed on the balance sheet as a line of its own.
+      const partner = !passed && !restricted && end > bsCash ? printedBalanceRow(end - bsCash) : null;
       add(
         'accounts',
         'Closing cash agrees with the balance sheet',
-        passed,
+        passed || restricted || Boolean(partner),
         passed
           ? `${fmt(end)} in both for FY${period}.`
-          : `Cash flow closes at ${fmt(end)}, balance sheet shows ${fmt(bsCash)} for FY${period}, a gap of ${fmt(end - bsCash)}. Usually restricted cash; confirm in the cash note.`,
+          : partner
+            ? `Cash flow closes at ${fmt(end)}: balance sheet cash of ${fmt(bsCash)} plus "${partner}" of ${fmt(end - bsCash)} for FY${period}.`
+            : restricted
+              ? `Cash flow closes at ${fmt(end)} including restricted cash, which its label states; the balance sheet shows ${fmt(bsCash)} of cash for FY${period}, so restricted cash is ${fmt(end - bsCash)}.`
+              : `Cash flow closes at ${fmt(end)}, balance sheet shows ${fmt(bsCash)} for FY${period}, a gap of ${fmt(end - bsCash)}. Usually restricted cash; confirm in the cash note.`,
         { period }
       );
     }

@@ -79,6 +79,46 @@ const cleanTicker = value => {
   return ticker;
 };
 
+/** SEC-registered companies whose ticker or name matches `query`, best first: exact ticker, then name prefix. */
+export async function searchCompanies(rawQuery, limit = 8) {
+  const query = String(rawQuery ?? '')
+    .trim()
+    .toLowerCase();
+  if (query.length < 1) return { results: [] };
+  const all = await getJson('https://www.sec.gov/files/company_tickers.json', {
+    headers: { 'user-agent': secAgent() },
+    key: 'sec-company-tickers'
+  });
+  const words = query.split(/\s+/);
+  const scored = [];
+  for (const entry of Object.values(all)) {
+    const ticker = entry.ticker.toLowerCase();
+    const name = entry.title.toLowerCase();
+    const score =
+      ticker === query
+        ? 0
+        : name.startsWith(query)
+          ? 1
+          : ticker.startsWith(query)
+            ? 2
+            : words.every(word => name.includes(word))
+              ? 3
+              : -1;
+    if (score >= 0) scored.push({ score, ticker: entry.ticker, name: entry.title, cik: entry.cik_str });
+  }
+  // SEC lists the largest filers first, so the order within a score keeps big companies on top.
+  scored.sort((a, b) => a.score - b.score);
+  const seen = new Set();
+  const results = [];
+  for (const item of scored) {
+    if (seen.has(item.cik)) continue; // one row per company, not per share class
+    seen.add(item.cik);
+    results.push({ ticker: item.ticker, name: item.name });
+    if (results.length >= limit) break;
+  }
+  return { results };
+}
+
 export async function secCompany(ticker) {
   const all = await getJson('https://www.sec.gov/files/company_tickers.json', {
     headers: { 'user-agent': secAgent() },

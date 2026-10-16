@@ -68,7 +68,13 @@ function historicals(index, periods) {
     const revenue = g('income', 'revenue', period);
     const cogsRaw = g('income', 'cost_of_revenue', period);
     const opexRaw = g('income', 'operating_expenses', period);
-    const ebit = g('income', 'operating_income', period);
+    const ebitReported = g('income', 'operating_income', period);
+    const exceptional = g('income', 'exceptional_items', period);
+    // Some statements (Pfizer's) print no operating income: revenue less every operating cost line gives it.
+    const ebitDerived = !Number.isFinite(ebitReported) && Number.isFinite(revenue) && Number.isFinite(opexRaw);
+    const ebit = ebitDerived
+      ? revenue - Math.abs(cogsRaw ?? 0) - Math.abs(opexRaw) - Math.abs(exceptional ?? 0)
+      : ebitReported;
     const pretax = g('income', 'pretax_income', period);
     const netIncome = g('income', 'net_income', period);
     let tax = g('income', 'income_tax', period);
@@ -98,13 +104,21 @@ function historicals(index, periods) {
     const equity = g('balance', 'total_equity', period);
     const tle = g('balance', 'total_liabilities_and_equity', period);
     const tlReported = g('balance', 'total_liabilities', period);
-    const tlSource = Number.isFinite(tlReported)
-      ? 'reported'
-      : Number.isFinite(tle) && Number.isFinite(equity)
-        ? 'tle'
-        : Number.isFinite(tcl) && Number.isFinite(ncl)
-          ? 'parts'
-          : null;
+    // Redeemable interests printed between liabilities and equity count with liabilities, so the model balances.
+    const mezzanine =
+      [tlReported, tle, equity].every(Number.isFinite) && tle - tlReported - equity > Math.max(1, Math.abs(tle) * 1e-4);
+    const tlSource = mezzanine
+      ? 'tle'
+      : Number.isFinite(tlReported)
+        ? 'reported'
+        : Number.isFinite(tle) && Number.isFinite(equity)
+          ? 'tle'
+          : Number.isFinite(tcl) && Number.isFinite(ncl)
+            ? 'parts'
+            : Number.isFinite(ta) && Number.isFinite(equity)
+              ? 'assets'
+              : null;
+    // With no total printed (common in US filings), the balance sheet identity gives it: assets less equity.
     const tl =
       tlSource === 'reported'
         ? tlReported
@@ -112,7 +126,9 @@ function historicals(index, periods) {
           ? tle - equity
           : tlSource === 'parts'
             ? tcl + ncl
-            : null;
+            : tlSource === 'assets'
+              ? ta - equity
+              : null;
     const hasBalance = [cash, tca, ta, tcl, equity, tl].every(Number.isFinite);
 
     return {
@@ -124,6 +140,7 @@ function historicals(index, periods) {
         (Number.isFinite(revenue) && Number.isFinite(cogsRaw) ? revenue - Math.abs(cogsRaw) : null),
       opex: Number.isFinite(opexRaw) ? Math.abs(opexRaw) : null,
       ebit,
+      ebitDerived,
       da,
       ebitda: Number.isFinite(ebit) && Number.isFinite(da) ? ebit + da : null,
       otherIncome: Number.isFinite(pretax) && Number.isFinite(ebit) ? pretax - ebit : null,
@@ -158,7 +175,7 @@ function historicals(index, periods) {
       debtNoncurrent: hasBalance ? debtNoncurrent : null,
       oncl: hasBalance ? tl - tcl - debtNoncurrent : null,
       tl,
-      tlDerived: tlReported == null && tl != null,
+      tlDerived: tlSource !== 'reported' && tl != null,
       tlSource,
       taDerived: taReported == null && ta != null,
       equity,

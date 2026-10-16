@@ -27,7 +27,22 @@ const MUTED = '6B7785';
 const ACCENT = '1F6FEB';
 const LINE = 'D9DEE5';
 
-const SYMBOL = { USD: '$', GBP: '£', EUR: '€' };
+const SYMBOL = {
+  USD: '$',
+  GBP: '£',
+  EUR: '€',
+  TWD: 'NT$',
+  JPY: '¥',
+  CNY: 'RMB ',
+  HKD: 'HK$',
+  CAD: 'C$',
+  AUD: 'A$',
+  INR: '₹',
+  KRW: '₩',
+  CHF: 'CHF '
+};
+// Any other currency prints its ISO code.
+const symbol = currency => SYMBOL[currency] ?? (currency ? `${currency} ` : '');
 const SUFFIX = { 1e9: 'bn', 1e6: 'm', 1e3: 'k', 1: '' };
 
 export function money(value, unit, digits = 0) {
@@ -35,11 +50,11 @@ export function money(value, unit, digits = 0) {
   const text = new Intl.NumberFormat('en-GB', { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(
     Math.abs(value)
   );
-  const out = `${SYMBOL[unit.currency] ?? ''}${text}${SUFFIX[unit.scale] ?? ''}`;
+  const out = `${symbol(unit.currency)}${text}${SUFFIX[unit.scale] ?? ''}`;
   return value < 0 ? `(${out})` : out;
 }
 export const perShareText = (value, unit) =>
-  Number.isFinite(value) ? `${SYMBOL[unit.currency] ?? ''}${value.toFixed(2)}` : 'n/a';
+  Number.isFinite(value) ? `${symbol(unit.currency)}${value.toFixed(2)}` : 'n/a';
 /** Reported EPS as printed: pence or cents when the filing prints it that way, otherwise in currency units. */
 export const epsText = (eps, assumptions, unit) =>
   !Number.isFinite(eps)

@@ -1169,14 +1169,35 @@ export function DeskView() {
 
   // Pulls a company's latest annual filing from SEC EDGAR through the engine, then reads it like an upload.
   const [lookup, setLookup] = React.useState({ ticker: '', busy: false, filing: null });
-  const fetchFiling = async event => {
-    event.preventDefault();
-    const symbol = lookup.ticker.trim().toUpperCase();
+  const [matches, setMatches] = React.useState([]);
+  // Suggests SEC-registered companies by name or ticker as the analyst types.
+  React.useEffect(() => {
+    const query = lookup.ticker.trim();
+    if (query.length < 2 || lookup.busy) return undefined;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      engine
+        .searchCompanies(query)
+        .then(data => alive && setMatches(data.results ?? []))
+        .catch(() => alive && setMatches([]));
+    }, 200);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [lookup.ticker, lookup.busy]);
+  const fetchFiling = async (event, picked) => {
+    event?.preventDefault();
+    const typed = lookup.ticker.trim();
+    // A typed name resolves to its best match; a typed ticker is used as it is.
+    const exact = matches.find(m => m.ticker.toLowerCase() === typed.toLowerCase());
+    const symbol = (picked ?? exact ?? (/\s/.test(typed) || typed.length > 5 ? matches[0] : null))?.ticker ?? typed;
     if (!symbol) return;
-    setLookup(current => ({ ...current, busy: true, filing: null }));
+    setMatches([]);
+    setLookup(current => ({ ...current, ticker: symbol.toUpperCase(), busy: true, filing: null }));
     setError('');
     try {
-      const { filing, bytes } = await engine.annualFiling(symbol);
+      const { filing, bytes } = await engine.annualFiling(symbol.toUpperCase());
       setLookup(current => ({ ...current, busy: false, filing }));
       await choose(new File([bytes], `${filing.name}.pdf`, { type: 'application/pdf' }), filing.ticker);
     } catch (cause) {
@@ -1368,21 +1389,51 @@ export function DeskView() {
               />
             </label>
 
-            <form onSubmit={fetchFiling} className="mt-3 flex flex-wrap items-end gap-2">
+            <form onSubmit={fetchFiling} className="relative mt-3 flex flex-wrap items-end gap-2">
               <label htmlFor="desk-ticker" className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <span className="text-[12.5px] font-semibold text-fg2">Or fetch the latest 10-K from SEC EDGAR</span>
+                <span className="text-[12.5px] font-semibold text-fg2">
+                  Or search a US-listed company and fetch its latest annual report from SEC EDGAR
+                </span>
                 <input
                   id="desk-ticker"
                   value={lookup.ticker}
-                  onChange={event => setLookup(current => ({ ...current, ticker: event.target.value }))}
-                  placeholder="US ticker, such as AAPL"
+                  onChange={event => {
+                    const value = event.target.value;
+                    setLookup(current => ({ ...current, ticker: value }));
+                    if (value.trim().length < 2) setMatches([]);
+                  }}
+                  onKeyDown={event => event.key === 'Escape' && setMatches([])}
+                  placeholder="Company or ticker, such as Nvidia or KO"
                   autoComplete="off"
                   spellCheck={false}
-                  maxLength={10}
+                  maxLength={60}
+                  role="combobox"
+                  aria-expanded={matches.length > 0}
+                  aria-controls="desk-ticker-list"
                   disabled={lookup.busy || running || Boolean(reading)}
-                  className="h-9 rounded-ctl border border-line2 bg-inset px-3 font-mono text-[13px] uppercase text-fg outline-hidden placeholder:font-sans placeholder:normal-case placeholder:text-fg3 focus:border-gold/60"
+                  className="h-9 rounded-ctl border border-line2 bg-inset px-3 text-[13px] text-fg outline-hidden placeholder:text-fg3 focus:border-gold/60"
                 />
               </label>
+              {matches.length > 0 && (
+                <ul
+                  id="desk-ticker-list"
+                  role="listbox"
+                  className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-xl border border-line2 bg-overlay p-1 shadow-lg"
+                >
+                  {matches.map(match => (
+                    <li key={match.ticker} role="option" aria-selected={false}>
+                      <button
+                        type="button"
+                        onClick={event => void fetchFiling(event, match)}
+                        className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[13px] hover:bg-fg/6"
+                      >
+                        <span className="w-16 shrink-0 font-mono text-[12px] text-gold">{match.ticker}</span>
+                        <span className="min-w-0 flex-1 truncate">{match.name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <Button
                 type="submit"
                 disabled={

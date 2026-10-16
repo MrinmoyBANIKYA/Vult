@@ -6,3 +6,4 @@ supabase/functions
 supabase/seed.sql
 supabase/migrations
 *.md
+.vult

@@ -12,7 +12,7 @@ const STATEMENTS = [
   {
     key: 'income',
     heading:
-      /statements? of (consolidated )?(operations|income|earnings)|income statements?|statements? of profit or loss|profit and loss account/i,
+      /statements? of (consolidated )?(comprehensive )?(operations|income|earnings)|income statements?|statements? of profit or loss|profit and loss account/i,
     indicators: [
       /revenue|net sales|turnover/i,
       /net income|loss|profit for the (financial )?(year|period)/i,
@@ -82,6 +82,8 @@ export function parseCell(cell) {
 
 const isValueCell = cell => {
   const raw = String(cell).replace(/\s/g, '');
+  // "31," is the end of a date and "$10,162)" the end of a wrapped label, not printed figures.
+  if (raw.endsWith(',') || (raw.match(/\(/g) ?? []).length !== (raw.match(/\)/g) ?? []).length) return false;
   return NUMBER_CELL.test(raw) || DASH_CELL.test(raw);
 };
 const isCurrency = cell => /^[$£€]$/.test(cell);
@@ -108,6 +110,8 @@ export function splitRow(line) {
   }
   const values = [];
   while (cells.length > 1 && isValueCell(cells.at(-1))) values.unshift(cells.pop());
+  // A line of figures alone, its label wrapped onto the line above; a lone number (a page number) is not one.
+  if (cells.length === 1 && values.length && isValueCell(cells[0])) values.unshift(cells.pop());
   const label = cells
     .join(' ')
     .replace(/\s*[$£€]\s*$/, '')
@@ -140,12 +144,21 @@ function scorePage(text, statement) {
   const headingAnywhere = statement.heading.test(text);
   const indicators = statement.indicators.filter(pattern => pattern.test(text)).length;
   const otherHeadings = STATEMENTS.filter(other => other !== statement && other.heading.test(text)).length;
+  // Many 10-Ks print a "Table of Contents" back-link on every page, so a real index also has few figures.
   const looksLikeIndex =
-    /index to (the )?(consolidated )?financial statements|table of contents/i.test(text) ||
-    (otherHeadings >= 2 && numericRows < 8);
+    numericRows < 8 &&
+    (/index to (the )?(consolidated )?financial statements|table of contents/i.test(text) || otherHeadings >= 2);
   const parentOnly = PARENT_ONLY.test(top) && !GROUP.test(top);
+  // The statement's own title on a line of its own ("Consolidated statements of income"), not a mention of it.
+  const titled = linesOf(top).some(line =>
+    new RegExp(`^\\s*((the )?(consolidated|group) )?(${statement.heading.source})\\s*(\\(.*\\))?\\s*$`, 'i').test(line)
+  );
+  // Five-year summaries and highlights repeat the headline lines, unaudited.
+  const summary = /\b(unaudited|summary|highlights|selected (financial|income))\b/i.test(top);
   return (
     (headingTop ? 6 : headingAnywhere ? 2 : 0) +
+    (titled ? 3 : 0) -
+    (summary ? 5 : 0) +
     indicators +
     Math.min(numericRows / 5, 4) +
     (headingTop && GROUP.test(top) ? 1 : 0) -
@@ -176,13 +189,32 @@ export function selectStatementPages(pageTexts) {
     }
     const chosen = [best];
     const next = byPage.get(best.page + 1);
+    const othersTop = item => STATEMENTS.some(other => other !== statement && other.heading.test(topLines(item.text)));
+    // A statement that starts at the foot of its page ("… STATEMENTS OF PROFIT OR LOSS" below the balance
+    // sheet's last lines) runs onto the next page.
+    const startsLow = !statement.heading.test(topLines(best.text));
     if (
       next &&
-      !statement.closing.test(best.text) &&
-      statement.closing.test(next.text) &&
-      !STATEMENTS.some(other => other !== statement && other.heading.test(topLines(next.text)))
+      !othersTop(next) &&
+      ((!statement.closing.test(best.text) && statement.closing.test(next.text)) || startsLow)
     )
       chosen.push(next);
+    // A page headed as the statement can be its second half: the page before ends "(Continued)" or prints
+    // the statement's title part-way down.
+    for (let page = best.page - 1, steps = 0; steps < 2; page -= 1, steps += 1) {
+      const prev = byPage.get(page);
+      if (!prev || othersTop(prev) || chosen.some(item => item.page === page)) break;
+      const continued = /\(continued\)/i.test(prev.text.split('\n').slice(-4).join(' '));
+      // The title on a line of its own below the page's top, not a mention in an index or the auditor's report.
+      const titled =
+        !statement.heading.test(topLines(prev.text)) &&
+        linesOf(prev.text).some(line =>
+          new RegExp(`^\\s*((the )?(consolidated|group) )?(${statement.heading.source})[a-z ]*\\s*$`, 'i').test(line)
+        );
+      if (!continued && !titled) break;
+      chosen.unshift(prev);
+      if (titled) break;
+    }
     for (const item of chosen) {
       const existing = selected.get(item.page);
       selected.set(item.page, {
@@ -207,6 +239,10 @@ export function selectStatementPages(pageTexts) {
  * A note reference printed before the figures is kept as `note`; `offset` counts it so column indexes
  * still match every printed cell on the line.
  */
+// A line of currency markers over the figure columns: "NT$   NT$   US$", "£m   £m", "RMB   RMB   US$".
+const CURRENCY_HEADER =
+  /^\s*(?:(?:NT|US|HK|A|C|S)?\$|£|€|¥|RMB|R\$)m?(?:\s{2,}(?:(?:NT|US|HK|A|C|S)?\$|£|€|¥|RMB|R\$)m?)+\s*$/;
+
 // A capitals row continues the capitals line above it when it is one word, or the line above ends mid-phrase.
 const wrapsCaps = (heading, label) =>
   Boolean(label) &&
@@ -217,8 +253,13 @@ const wrapsCaps = (heading, label) =>
 export function statementRows(pages, startId = 1) {
   const rows = [];
   let id = startId;
+  // A continuation page can print a row before its header, so it starts with the previous page's years.
+  let lastPeriods = null;
+  // Foreign filers add a convenience translation column ("NT$   NT$   US$"); it is not another year.
+  let convenience = false;
+  const headers = [];
   for (const { page, text } of pages) {
-    let periods = null;
+    let periods = lastPeriods;
     let notes = false;
     let section = '';
     let carry = '';
@@ -229,10 +270,17 @@ export function statementRows(pages, startId = 1) {
       if (!line.trim()) continue;
       const lastCaps = caps;
       caps = null;
+      const currencies = CURRENCY_HEADER.test(line) ? line.trim().split(/\s+/) : null;
+      if (currencies) {
+        convenience = currencies.length > 1 && currencies.at(-1) !== currencies[0];
+        continue;
+      }
       // A header holds years and words ("Years ended", "2024   2023", "Notes 2025 £m") but no other figures.
       const years = headerYears(line);
       if (years) {
-        if (!periods || years.length >= periods.length) periods = years;
+        // The page's own first header replaces years carried from the page before.
+        if (!periods || periods === lastPeriods || years.length >= periods.length) periods = years;
+        headers.push(years);
         if (/\bnotes?\b/i.test(line)) notes = true;
         continue;
       }
@@ -240,9 +288,10 @@ export function statementRows(pages, startId = 1) {
         if (/\bnotes?\b/i.test(line)) notes = true;
         continue;
       }
-      if (/\|\s*\d+\s*$|form 10-k\s*\|/i.test(line)) continue; // running page footer
+      if (/\|\s*\d+\s*$|form 10-k\s*\||form (10-k|20-f)\s+\d{1,3}\s*$/i.test(line)) continue; // running page footer
       const split = splitRow(line);
       let { label, cells } = split;
+      if (convenience && periods && cells.length > periods.length) cells = cells.slice(0, -1);
       let note = '';
       let offset = 0;
       if (periods && cells.length === periods.length + 1 && NOTE_REF.test(cells[0].replace(/\s/g, ''))) {
@@ -286,7 +335,13 @@ export function statementRows(pages, startId = 1) {
         fullLabel = `${lastCaps.line.trim()} ${label}`;
         quote = `${lastCaps.line}\n${line}`;
         section = lastCaps.section;
-      } else if (carry && (!label || /^[a-z(]/.test(label))) {
+      } else if (
+        carry &&
+        // A line ending mid-phrase ("… Restricted Cash and") continues whatever case comes next; a comma does
+        // not, since headers end in one ("Years ended December 31,").
+        (!label || !/^[A-Z]/.test(label) || /\b(and|of|or|to|for|in|on|the|from|with|by|at)\s*$/i.test(carry))
+      ) {
+        // Anything but a capital continues the label above: "and", "(", "$10,162)".
         fullLabel = `${carry} ${label}`.trim();
         quote = `${carryQuote}\n${line}`;
       } else if (carry) {
@@ -311,18 +366,43 @@ export function statementRows(pages, startId = 1) {
         ...(offset ? { offset } : {})
       });
     }
+    lastPeriods = periods;
+  }
+  // Rows printed above their page's year header take the statement's year columns when the count fits.
+  const sets = [...new Map(headers.filter(Boolean).map(set => [set.join(), set])).values()];
+  for (const row of rows) {
+    if (row.periods) continue;
+    const fits = sets.filter(set => set.length === row.values.length);
+    if (fits.length === 1) row.periods = fits[0];
   }
   return rows;
 }
 
 /** Reported unit and its scale, read from the statement headers ("in millions", "£m", "£'000", "$bn"). */
+const NAMED_CURRENCIES = [
+  [/new taiwan dollars/, 'TWD'],
+  [/(japanese )?yen/, 'JPY'],
+  [/renminbi/, 'CNY'],
+  [/hong kong dollars/, 'HKD'],
+  [/canadian dollars/, 'CAD'],
+  [/australian dollars/, 'AUD'],
+  [/(indian )?rupees/, 'INR'],
+  [/(korean )?won/, 'KRW'],
+  [/swiss francs/, 'CHF'],
+  [/euros?/, 'EUR'],
+  [/(pounds )?sterling|pounds/, 'GBP'],
+  [/(u\.?s\.? )?dollars/, 'USD']
+];
+
 export function detectUnit(text) {
   const t = String(text ?? '');
-  const scale = /in (billions)|[£$€]\s?bn\b|(?:GBP|USD|EUR)\s?bn\b|[£$€]\s?billions?\b/i.test(t)
+  const scale = /in (billions)|\(\s*billions\b|[£$€]\s?bn\b|(?:GBP|USD|EUR)\s?bn\b|[£$€]\s?billions?\b/i.test(t)
     ? ['billions', 1e9]
-    : /in (millions)|[£$€]\s?m\b|(?:GBP|USD|EUR)\s?m\b|[£$€]\s?millions?\b|millions of (pounds|dollars|euros)/i.test(t)
+    : /in (millions)|\(\s*millions\b|[£$€]\s?m\b|(?:GBP|USD|EUR)\s?m\b|[£$€]\s?millions?\b|millions of (pounds|dollars|euros)/i.test(
+          t
+        )
       ? ['millions', 1e6]
-      : /in (thousands)|[£$€]\s?'?000\b|(?:GBP|USD|EUR)\s?'?000\b|[£$€]\s?thousands?\b|thousands of (pounds|dollars|euros)/i.test(
+      : /in (thousands)|\(\s*thousands\b|[£$€]\s?'?000\b|(?:GBP|USD|EUR)\s?'?000\b|[£$€]\s?thousands?\b|thousands of (pounds|dollars|euros)/i.test(
             t
           )
         ? ['thousands', 1e3]
@@ -334,7 +414,11 @@ export function detectUnit(text) {
     ['EUR', count(/€|\bEUR\b|\beuros?\b/gi)],
     ['USD', count(/\$|\bUSD\b/gi)]
   ].sort((a, b) => b[1] - a[1]);
-  const currency = tally[0][1] > 0 ? tally[0][0] : 'USD';
+  // A header that names the currency ("in millions of New Taiwan Dollars") settles it before any count.
+  const named = NAMED_CURRENCIES.find(([pattern]) =>
+    new RegExp(`(millions|thousands|billions|amounts?|expressed) (of|in) ${pattern.source}`, 'i').test(t)
+  );
+  const currency = named ? named[1] : tally[0][1] > 0 ? tally[0][0] : 'USD';
   return { label: `${currency} ${scale[0]}`, currency, scale: scale[1] };
 }
 
@@ -462,14 +546,17 @@ export function mappingProblems(statement, rows, mapping, unit) {
     const spec = STATEMENT_KEYS[statement]?.[key];
     for (const id of ids ?? []) {
       const row = byId.get(id);
-      if (row && spec?.[2] && !spec[2].test(row.label))
+      if (row && spec?.[2] && !spec[2].test(`${row.section ?? ''} ${row.label}`))
         problems.push(`${key}: row ${id} "${row.label}" does not read as ${spec[0].toLowerCase()}.`);
     }
   }
   const { facts } = resolveFacts(statement, rows, mapping, unit);
   const sum = (key, period) => {
     const parts = new Map(
-      facts.filter(f => f.key === key && f.period === period).map(f => [f.part ?? 0, Math.abs(f.value)])
+      facts
+        .filter(f => f.key === key && f.period === period)
+        // Costs are printed either way round; cash flows keep their sign, outflows in brackets.
+        .map(f => [f.part ?? 0, statement === 'cashflow' ? f.value : Math.abs(f.value)])
     );
     return parts.size ? [...parts.values()].reduce((a, b) => a + b, 0) : null;
   };
@@ -483,7 +570,10 @@ export function mappingProblems(statement, rows, mapping, unit) {
         ]
       : statement === 'balance'
         ? [[['total_assets'], 'total_liabilities_and_equity']]
-        : [];
+        : [
+            [['cash_beginning', 'cash_change'], 'cash_ending'],
+            [['operating_cash_flow', 'investing_cash_flow', 'financing_cash_flow'], 'cash_change', ['fx_effect']]
+          ];
   for (const [terms, total, optional = []] of identities) {
     const keyOf = term => term.replace(/^-/, '');
     const value = (list, period) =>
@@ -511,7 +601,11 @@ export function resolveFacts(statement, rows, mapping, unit) {
     if (!spec) continue;
     // A total picked alongside its own parts would count them twice; the printed total wins.
     const totals = spec[3] && ids.length > 1 ? ids.filter(id => /^total\b/i.test(byId.get(id)?.label ?? '')) : [];
-    const picked = totals.length ? totals.slice(0, 1) : ids;
+    // Of several rows for one line item, those whose heading and label contradict it are left out, as long
+    // as one that fits remains ("Other (income)/deductions" is not an operating expense).
+    const fits = id => !spec[2] || spec[2].test(`${byId.get(id)?.section ?? ''} ${byId.get(id)?.label ?? ''}`);
+    const fitting = !totals.length && ids.length > 1 ? ids.filter(fits) : [];
+    const picked = totals.length ? totals.slice(0, 1) : fitting.length ? fitting : ids;
     for (const [index, id] of picked.entries()) {
       const row = byId.get(id);
       if (!row) continue;
@@ -531,6 +625,7 @@ export function resolveFacts(statement, rows, mapping, unit) {
           key,
           part: spec[3] ? index : 0,
           label: row.label,
+          section: row.section,
           name: spec[0],
           period,
           value: row.values[column],

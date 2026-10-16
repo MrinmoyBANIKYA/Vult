@@ -404,7 +404,17 @@ export async function buildModelWorkbook({
     else if (Number.isFinite(h.grossProfit))
       put(isSheet, `${c}${IS.gross}`, `${c}${IS.revenue}-${c}${IS.cogs}`, h.grossProfit, { fmt: AMOUNT });
     linkHist(isSheet, `${c}${IS.opex}`, ref('income', 'operating_expenses', p), h.opex, AMOUNT, f => `ABS(${f})`);
-    linkHist(isSheet, `${c}${IS.ebit}`, ref('income', 'operating_income', p), h.ebit);
+    if (h.ebitDerived) {
+      const exc = ref('income', 'exceptional_items', p);
+      const cell = put(
+        isSheet,
+        `${c}${IS.ebit}`,
+        `${c}${IS.revenue}-${c}${IS.cogs}-${c}${IS.opex}${exc ? `-ABS(${exc.formula})` : ''}`,
+        h.ebit,
+        { fmt: AMOUNT, color: LINK_GREEN }
+      );
+      cell.note = 'Not printed in the filing: revenue less cost of revenue, operating expenses and exceptional items.';
+    } else linkHist(isSheet, `${c}${IS.ebit}`, ref('income', 'operating_income', p), h.ebit);
     if (Number.isFinite(h.ebit) && Number.isFinite(h.revenue))
       put(isSheet, `${c}${IS.margin}`, `${c}${IS.ebit}/${c}${IS.revenue}`, h.ebit / h.revenue, { fmt: PCT });
     if (Number.isFinite(h.da)) put(isSheet, `${c}${IS.da}`, cfRef(CF.da, c), h.da, { fmt: AMOUNT, color: LINK_GREEN });
@@ -530,7 +540,7 @@ export async function buildModelWorkbook({
     if (dn) linkHist(bsSheet, `${c}${BS.debtNon}`, dn, h.debtNoncurrent);
     else input(bsSheet, `${c}${BS.debtNon}`, 0, AMOUNT);
     const tlRef = ref('balance', 'total_liabilities', p);
-    if (tlRef) linkHist(bsSheet, `${c}${BS.tl}`, tlRef, h.tl);
+    if (tlRef && h.tlSource === 'reported') linkHist(bsSheet, `${c}${BS.tl}`, tlRef, h.tl);
     else if (h.tlSource === 'tle') {
       const tle = ref('balance', 'total_liabilities_and_equity', p);
       const eq = ref('balance', 'total_equity', p);
@@ -538,7 +548,15 @@ export async function buildModelWorkbook({
         fmt: AMOUNT,
         color: LINK_GREEN
       });
-      cell.note = 'Not printed in the filing: total liabilities and equity less total equity.';
+      cell.note = tlRef
+        ? 'Total liabilities and equity less total equity, so redeemable interests printed between liabilities and equity count as liabilities.'
+        : 'Not printed in the filing: total liabilities and equity less total equity.';
+    } else if (h.tlSource === 'assets') {
+      const cell = put(bsSheet, `${c}${BS.tl}`, `${c}${BS.ta}-${c}${BS.equity}`, h.tl, {
+        fmt: AMOUNT,
+        color: LINK_GREEN
+      });
+      cell.note = 'Not printed in the filing: total assets less total equity.';
     } else {
       const ncl = ref('balance', 'noncurrent_liabilities', p);
       const cell = put(bsSheet, `${c}${BS.tl}`, `${c}${BS.tcl}+${ncl.formula}`, h.tl, {

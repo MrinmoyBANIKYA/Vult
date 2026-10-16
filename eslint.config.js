@@ -6,7 +6,7 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 
 export default defineConfig([
   // Edge functions run on Deno and are checked by the Deno extension, not ESLint.
-  globalIgnores(['dist', 'node_modules', 'supabase/functions']),
+  globalIgnores(['dist', 'node_modules', 'supabase/functions', '.vult']),
   {
     files: ['**/*.{js,jsx,mjs}'],
     extends: [js.configs.recommended, reactHooks.configs.flat['recommended-latest'], reactRefresh.configs.vite],

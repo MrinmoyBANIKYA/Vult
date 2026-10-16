@@ -42,6 +42,7 @@ export function engineClient(base = '/engine') {
     fundamentals: ticker => call('GET', `/market/fundamentals?ticker=${encodeURIComponent(ticker)}`),
     peer: ticker => call('GET', `/market/peer?ticker=${encodeURIComponent(ticker)}`),
     fx: (from, to) => call('GET', `/market/fx?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+    searchCompanies: query => call('GET', `/companies?q=${encodeURIComponent(query)}`),
     listRuns: () => call('GET', '/runs'),
     getRun: id => call('GET', `/runs/${encodeURIComponent(id)}`),
     saveRun: (id, body) => call('PUT', `/runs/${encodeURIComponent(id)}`, body),

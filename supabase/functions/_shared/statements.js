@@ -10,7 +10,7 @@ export const STATEMENT_KEYS = {
     revenue: ['Revenue', 'Total revenue, turnover or total net sales for the whole company (the top-line total, not a segment). For a bank, total operating income; for an insurer, total revenue or insurance revenue.', /revenue|sales|turnover|total (operating )?income/i],
     cost_of_revenue: ['Cost of revenue', 'Total cost of revenue or cost of sales (the total line).', /cost/i],
     gross_profit: ['Gross profit', 'Gross profit or gross margin, as an amount.', /gross/i],
-    operating_expenses: ['Operating expenses', 'Total operating expenses. If no total is printed, each operating expense line between gross profit and operating income (research and development, selling, marketing, general and administrative). Not cost of revenue.', /operating expenses|costs and expenses|total expenses|administrative|research|development|selling|marketing|distribution/i, true],
+    operating_expenses: ['Operating expenses', 'Total operating expenses. If no total is printed, each operating expense line between gross profit and operating income (research and development, selling, marketing, general and administrative, other operating charges). If no operating income is printed, every operating cost line above other income or deductions and pre-tax income. Not cost of revenue.', /operating (expenses|charges|costs)|non-?interest expense|costs and expenses|total expenses|administrative|research|development|selling|marketing|distribution/i, true],
     exceptional_items: ['Exceptional items', 'Each exceptional, adjusting, special, restructuring or impairment line printed on its own above operating profit. Not totals.', /exceptional|adjusting|special|restructuring|impairment|non-?recurring|acquisition/i, true],
     operating_income: ['Operating income', 'Operating income, income from operations or operating profit (statutory, after any exceptional items).', /operat/i],
     interest_expense: ['Interest expense', 'Interest expense or finance costs, only if printed as its own line.', /interest|finance (costs?|expense)/i],
@@ -37,7 +37,7 @@ export const STATEMENT_KEYS = {
     net_assets: ['Net assets', 'Net assets (total assets less total liabilities), if printed.', /net assets/i],
     nci_equity: ['Minority interests', 'Non-controlling (minority) interests within equity, if printed.', /non-?controlling|minority/i],
     total_equity: ['Total equity', "Total equity including non-controlling interests if printed; otherwise total shareholders' equity.", /equity/i],
-    total_liabilities_and_equity: ['Total liabilities and equity', "Total liabilities and shareholders' equity, or total equity and liabilities.", /liabilities and|equity and liabilities/i]
+    total_liabilities_and_equity: ['Total liabilities and equity', "Total liabilities and shareholders' equity, or total equity and liabilities.", /liabilities\b.*\band\b.*\bequity|equity and liabilities/i]
   },
   cashflow: {
     net_income: ['Net income', 'Net income or profit for the year at the top of operating activities.', /net (income|earnings|loss)|profit/i],
