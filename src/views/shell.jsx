@@ -75,10 +75,14 @@ function useNav() {
   const eng = route.v === 'engagement';
   // A client's own firm sees only the areas that work on real filings.
   const real = Boolean(live?.real);
-  const items = real ? NAV.filter(([k]) => k === 'desk') : NAV;
-  const on = k => (real ? k === 'desk' : k === 'library' ? eng && route.tab === 'sources' : route.v === k);
+  // Every area is listed; for a client firm Home and Engagements are its own reports and the rest are labelled
+  // demo previews. Demo project pins stay hidden.
+  const items = NAV;
+  const on = k => (k === 'library' ? eng && route.tab === 'sources' : route.v === k);
   const open = k => (k === 'library' ? go('engagement', 'sources') : go(k));
-  const meta = { autopilot: approvals.length || null, engagements: d.engagements.length, library: d.docs.length };
+  const meta = real
+    ? {}
+    : { autopilot: approvals.length || null, engagements: d.engagements.length, library: d.docs.length };
   return { on, open, meta, items, real };
 }
 
@@ -414,7 +418,7 @@ export function Header({ wide }) {
           </DropdownContent>
         </Dropdown>
       )}
-      <div className={cn('flex min-w-0 flex-1 justify-center', real && 'invisible')}>
+      <div className="flex min-w-0 flex-1 justify-center">
         <button
           onClick={() => setPal(true)}
           className={cn(

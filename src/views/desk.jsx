@@ -30,7 +30,15 @@ import { CorrectionLog, CorrectionPanel } from './desk-corrections.jsx';
 import { MarketPanel } from './desk-market.jsx';
 import { engine } from '../lib/engine-client.js';
 import { openPdf, readAnnualReport, renderSourcePage } from '../lib/annual-report.js';
-import { addVersion, changeNote, fromRecord, newRunId, runStore, toRecord } from '../lib/run-store.js';
+import {
+  addVersion,
+  changeNote,
+  fromRecord,
+  newRunId,
+  runStore,
+  takeOpenRunRequest,
+  toRecord
+} from '../lib/run-store.js';
 import { STEPS, buildOutputs, runPipeline } from '../lib/pipeline.js';
 import { money, pct, perShareText } from '../lib/memo.js';
 import { STATEMENT_KEYS } from '../../supabase/functions/_shared/statements.js';
@@ -1359,6 +1367,13 @@ export function DeskView() {
       setReading(null);
     }
   };
+  // Engagements and Home open a saved report here.
+  const openRunRef = React.useRef(openRun);
+  openRunRef.current = openRun;
+  React.useEffect(() => {
+    const id = takeOpenRunRequest();
+    if (id) void openRunRef.current(id);
+  }, []);
   const saveCorrection = async correction => {
     const ok = await recompute({ corrections: [...(result.extraction.corrections ?? []), correction] });
     if (ok) setCorrecting(null);

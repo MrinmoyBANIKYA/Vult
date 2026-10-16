@@ -34,6 +34,7 @@ import { EvidencePanel, CellPanel, AskPanel } from './views/panels.jsx';
 // The Filing desk carries ExcelJS, docx and pdf.js, so it loads only when opened.
 const DeskView = React.lazy(() => import('./views/desk.jsx').then(m => ({ default: m.DeskView })));
 import { TAB_ICON, TAB_KEY, KEY_TAB } from './views/tabs.js';
+import { DemoBanner, FirmEngagements, FirmHome } from './views/firm.jsx';
 
 /* ------------------------------------------------------------------ routing */
 const VIEWS = ['home', 'desk', 'autopilot', 'engagements', 'platform'];
@@ -575,12 +576,9 @@ export default function App() {
     }
   };
 
-  const view =
-    firm || route.v === 'desk' ? (
-      <React.Suspense fallback={<div className="px-7 pt-6 text-[13px] text-fg3">Loading the Filing desk</div>}>
-        <DeskView />
-      </React.Suspense>
-    ) : route.v === 'home' ? (
+  // A client firm's Home and Engagements are its own reports; the other areas are a labelled demo preview.
+  const scripted =
+    route.v === 'home' ? (
       <Home />
     ) : route.v === 'autopilot' ? (
       <Autopilot />
@@ -591,17 +589,32 @@ export default function App() {
     ) : (
       <EngagementView />
     );
-  // The evidence, cell and co-pilot panels belong to the scripted engagements.
-  const dockEl =
-    dock && !firm ? (
-      dock.k === 'ev' ? (
-        <EvidencePanel k={dock.key} key={dock.key} />
-      ) : dock.k === 'cell' ? (
-        <CellPanel rc={dock.rc} />
-      ) : (
-        <AskPanel />
-      )
-    ) : null;
+  const view =
+    route.v === 'desk' ? (
+      <React.Suspense fallback={<div className="px-7 pt-6 text-[13px] text-fg3">Loading the Filing desk</div>}>
+        <DeskView />
+      </React.Suspense>
+    ) : firm && route.v === 'home' ? (
+      <FirmHome />
+    ) : firm && route.v === 'engagements' ? (
+      <FirmEngagements />
+    ) : firm ? (
+      <>
+        {route.v !== 'engagement' && <DemoBanner />}
+        {scripted}
+      </>
+    ) : (
+      scripted
+    );
+  const dockEl = dock ? (
+    dock.k === 'ev' ? (
+      <EvidencePanel k={dock.key} key={dock.key} />
+    ) : dock.k === 'cell' ? (
+      <CellPanel rc={dock.rc} />
+    ) : (
+      <AskPanel />
+    )
+  ) : null;
 
   return (
     <Ctx.Provider value={ctx}>
@@ -670,7 +683,7 @@ export default function App() {
                 {dockEl}
               </Sheet>
             )}
-            {!firm && <Palette />}
+            <Palette />
             <KeysDialog />
             <Toaster
               position={dockEl && wideDock ? 'bottom-center' : 'bottom-right'}

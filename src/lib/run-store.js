@@ -33,6 +33,25 @@ export function runStore({ live, orgId }) {
   };
 }
 
+// Another view asks the Filing desk to open a saved run when it next mounts.
+const OPEN_RUN_KEY = 'vult-open-run';
+export function requestOpenRun(id) {
+  try {
+    sessionStorage.setItem(OPEN_RUN_KEY, id);
+  } catch {
+    /* without storage the desk opens on its saved runs list instead */
+  }
+}
+export function takeOpenRunRequest() {
+  try {
+    const id = sessionStorage.getItem(OPEN_RUN_KEY);
+    sessionStorage.removeItem(OPEN_RUN_KEY);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 export const newRunId = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
