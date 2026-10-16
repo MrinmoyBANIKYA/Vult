@@ -430,6 +430,47 @@ function SourceViewer({ pdf, source, onClose, fileName, ocr }) {
 }
 
 /* ------------------------------------------------------------------ results */
+const RESULT_TABS = [
+  ['figures', 'Figures'],
+  ['valuation', 'Valuation'],
+  ['market', 'Market and peers'],
+  ['checks', 'Checks'],
+  ['narrative', 'Business and risks'],
+  ['history', 'History']
+];
+
+/** The report's sections as tabs, so an analyst moves between figures, valuation and checks without scrolling. */
+function ResultTabs({ value, onChange, flagged }) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Report sections"
+      className="-mx-1 mt-5 flex gap-1 overflow-x-auto border-t border-line pt-4"
+    >
+      {RESULT_TABS.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={value === id}
+          onClick={() => onChange(id)}
+          className={cn(
+            'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium transition-colors',
+            value === id ? 'bg-fg/10 text-fg' : 'text-fg3 hover:bg-fg/5 hover:text-fg'
+          )}
+        >
+          {label}
+          {id === 'checks' && flagged > 0 && (
+            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-warn/20 px-1.5 text-[11px] font-semibold text-warn">
+              {flagged}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Stat({ label, value, sub, tone }) {
   return (
     <div className="min-w-0 rounded-xl border border-line bg-fg/2 px-4 py-3">
@@ -1032,6 +1073,7 @@ export function DeskView() {
   const [overrides, setOverrides] = React.useState({});
   const [peers, setPeers] = React.useState([]);
   const [ticker, setTicker] = React.useState('');
+  const [tab, setTab] = React.useState('figures');
   const [correcting, setCorrecting] = React.useState(null);
   const { d, live } = useA() ?? {};
   const store = React.useMemo(
@@ -1072,6 +1114,7 @@ export function DeskView() {
     setOverrides({});
     setPeers([]);
     setTicker('');
+    setTab('figures');
     setSaved(null);
     setSaveError('');
     bytesRef.current = null;
@@ -1173,7 +1216,8 @@ export function DeskView() {
   // Suggests SEC-registered companies by name or ticker as the analyst types.
   React.useEffect(() => {
     const query = lookup.ticker.trim();
-    if (query.length < 2 || lookup.busy) return undefined;
+    // Only while the analyst is typing: a picked company does not reopen the list.
+    if (query.length < 2 || lookup.busy || !lookup.typing) return undefined;
     let alive = true;
     const timer = window.setTimeout(() => {
       engine
@@ -1185,7 +1229,7 @@ export function DeskView() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [lookup.ticker, lookup.busy]);
+  }, [lookup.ticker, lookup.busy, lookup.typing]);
   const fetchFiling = async (event, picked) => {
     event?.preventDefault();
     const typed = lookup.ticker.trim();
@@ -1194,7 +1238,7 @@ export function DeskView() {
     const symbol = (picked ?? exact ?? (/\s/.test(typed) || typed.length > 5 ? matches[0] : null))?.ticker ?? typed;
     if (!symbol) return;
     setMatches([]);
-    setLookup(current => ({ ...current, ticker: symbol.toUpperCase(), busy: true, filing: null }));
+    setLookup(current => ({ ...current, ticker: symbol.toUpperCase(), busy: true, typing: false, filing: null }));
     setError('');
     try {
       const { filing, bytes } = await engine.annualFiling(symbol.toUpperCase());
@@ -1399,10 +1443,11 @@ export function DeskView() {
                   value={lookup.ticker}
                   onChange={event => {
                     const value = event.target.value;
-                    setLookup(current => ({ ...current, ticker: value }));
+                    setLookup(current => ({ ...current, ticker: value, typing: true }));
                     if (value.trim().length < 2) setMatches([]);
                   }}
                   onKeyDown={event => event.key === 'Escape' && setMatches([])}
+                  onBlur={() => window.setTimeout(() => setMatches([]), 150)}
                   placeholder="Company or ticker, such as Nvidia or KO"
                   autoComplete="off"
                   spellCheck={false}
@@ -1520,78 +1565,91 @@ export function DeskView() {
                   </Button>
                 </div>
               </div>
+              <ResultTabs value={tab} onChange={setTab} flagged={result.assay.flagged} />
             </section>
 
-            <SecHead
-              title="Reported figures"
-              right={
-                <Segmented
-                  size="sm"
-                  value={statement}
-                  onChange={setStatement}
-                  label="Statement"
-                  options={[
-                    { v: 'income', l: 'Income' },
-                    { v: 'balance', l: 'Balance sheet' },
-                    { v: 'cashflow', l: 'Cash flow' }
-                  ].map(o => ({ ...o, l: o.l }))}
-                />
-              }
-            />
-            <section className="card overflow-hidden">
-              <p className="border-b border-line px-5 py-3 text-[12.5px] text-fg2">
-                Click any figure to open the PDF page with the row highlighted.
-              </p>
-              <StatementTable
-                facts={result.extraction.facts}
-                periods={[
-                  ...new Set(result.extraction.facts.filter(f => f.statement === statement).map(f => f.period))
-                ].sort()}
-                statement={statement}
-                onOpen={setSource}
-                onFix={setCorrecting}
+            {tab === 'figures' && (
+              <SecHead
+                title="Reported figures"
+                right={
+                  <Segmented
+                    size="sm"
+                    value={statement}
+                    onChange={setStatement}
+                    label="Statement"
+                    options={[
+                      { v: 'income', l: 'Income' },
+                      { v: 'balance', l: 'Balance sheet' },
+                      { v: 'cashflow', l: 'Cash flow' }
+                    ].map(o => ({ ...o, l: o.l }))}
+                  />
+                }
               />
-            </section>
-            <CorrectionLog corrections={result.extraction.corrections} onUndo={undoCorrection} busy={recomputing} />
-
-            <SecHead title="Market data and peers" />
-            <section className="card p-5 sm:p-6">
-              <MarketPanel
-                key={saved?.id ?? 'new'}
-                result={result}
-                ticker={ticker}
-                peers={peers}
-                busy={recomputing}
-                onApplyMarket={applyMarket}
-                onApplyPeers={applyPeers}
-              />
-            </section>
-
-            <SecHead title="Model and valuation" />
-            <section className="card p-5 sm:p-6">
-              {result.model.kind === 'financial' ? (
-                <FinancialValuation
-                  key={JSON.stringify(result.model.assumptions)}
-                  result={result}
-                  onApply={applyOverrides}
-                  busy={recomputing}
+            )}
+            {tab === 'figures' && (
+              <section className="card overflow-hidden">
+                <p className="border-b border-line px-5 py-3 text-[12.5px] text-fg2">
+                  Click any figure to open the PDF page with the row highlighted.
+                </p>
+                <StatementTable
+                  facts={result.extraction.facts}
+                  periods={[
+                    ...new Set(result.extraction.facts.filter(f => f.statement === statement).map(f => f.period))
+                  ].sort()}
+                  statement={statement}
+                  onOpen={setSource}
+                  onFix={setCorrecting}
                 />
-              ) : (
-                <Valuation
-                  key={JSON.stringify(result.model.assumptions)}
-                  result={result}
-                  onApply={applyOverrides}
-                  busy={recomputing}
-                />
-              )}
-            </section>
+              </section>
+            )}
+            {tab === 'figures' && (
+              <CorrectionLog corrections={result.extraction.corrections} onUndo={undoCorrection} busy={recomputing} />
+            )}
 
-            <div className="mt-8 grid gap-5 lg:grid-cols-2">
+            {tab === 'market' && <SecHead title="Market data and peers" />}
+            {tab === 'market' && (
               <section className="card p-5 sm:p-6">
+                <MarketPanel
+                  key={saved?.id ?? 'new'}
+                  result={result}
+                  ticker={ticker}
+                  peers={peers}
+                  busy={recomputing}
+                  onApplyMarket={applyMarket}
+                  onApplyPeers={applyPeers}
+                />
+              </section>
+            )}
+
+            {tab === 'valuation' && <SecHead title="Model and valuation" />}
+            {tab === 'valuation' && (
+              <section className="card p-5 sm:p-6">
+                {result.model.kind === 'financial' ? (
+                  <FinancialValuation
+                    key={JSON.stringify(result.model.assumptions)}
+                    result={result}
+                    onApply={applyOverrides}
+                    busy={recomputing}
+                  />
+                ) : (
+                  <Valuation
+                    key={JSON.stringify(result.model.assumptions)}
+                    result={result}
+                    onApply={applyOverrides}
+                    busy={recomputing}
+                  />
+                )}
+              </section>
+            )}
+
+            {tab === 'checks' && (
+              <section className="card mt-5 p-5 sm:p-6">
                 <h2 className="mb-3 text-[15px] font-semibold">Assayer</h2>
                 <Assayer assay={result.assay} onOpenPage={page => setSource({ page })} />
               </section>
-              <section className="card p-5 sm:p-6">
+            )}
+            {tab === 'narrative' && (
+              <section className="card mt-5 p-5 sm:p-6">
                 <h2 className="text-[15px] font-semibold">Business and risks</h2>
                 {result.narrative ? (
                   <>
@@ -1635,10 +1693,12 @@ export function DeskView() {
                   <p className="mt-2 text-[13px] text-fg3">No narrative was drafted for this filing.</p>
                 )}
               </section>
-            </div>
-            <div className="mt-5">
-              <VersionHistory saved={saved} saveError={saveError} />
-            </div>
+            )}
+            {tab === 'history' && (
+              <div className="mt-5">
+                <VersionHistory saved={saved} saveError={saveError} />
+              </div>
+            )}
           </>
         )}
 

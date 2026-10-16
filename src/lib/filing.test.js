@@ -38,6 +38,10 @@ test('parses printed cells, brackets and dashes', () => {
     label: 'Total assets',
     cells: ['411,976', '364,840']
   });
+  assert.deepEqual(splitRow('Net Sales   $14,294.3 $13,835.0 $14,805.9'), {
+    label: 'Net Sales',
+    cells: ['$14,294.3', '$13,835.0', '$14,805.9']
+  });
   assert.deepEqual(splitRow('Net sales . . . . . . . . . . $   237,710 $   222,730'), {
     label: 'Net sales',
     cells: ['237,710', '222,730']

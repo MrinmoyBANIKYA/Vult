@@ -99,7 +99,12 @@ export function splitRow(line) {
     .replace(/(^|\s)[$£€](?=\s|$)/g, '   ')
     .split(/\s{3,}/)
     .map(cell => cell.trim())
-    .filter(cell => cell && !isCurrency(cell));
+    .filter(cell => cell && !isCurrency(cell))
+    // Figures set one space apart ("$14,294.3 $13,835.0 $14,805.9") are separate columns.
+    .flatMap(cell => {
+      const tokens = cell.split(/\s+/);
+      return tokens.length > 1 && tokens.every(isValueCell) ? tokens : [cell];
+    });
   // Narrow layouts lose the column gaps; fall back to taking numeric tokens from the right.
   if (cells.length === 1) {
     const tokens = cells[0].split(/\s+/);
