@@ -15,6 +15,12 @@ const PROOF = [
   ]
 ];
 
+// Supabase's built-in mailer sends only a few emails an hour; say what to do instead of the raw error.
+const authMessage = error =>
+  /rate limit/i.test(error.message)
+    ? 'Too many sign-up emails were sent in the last hour. An admin can turn off "Confirm email" in Supabase (Authentication, Sign In / Providers, Email), or add your account under Authentication, Users, then try again.'
+    : error.message;
+
 export function Field({ id, label, ...props }) {
   return (
     <label htmlFor={id} className="flex flex-col gap-1.5">
@@ -41,7 +47,7 @@ export function SignIn() {
       mode === 'in'
         ? await auth.signIn(form.email, form.password)
         : await auth.signUp(form.email, form.password, form.name.trim());
-    if (error) return setState({ busy: false, error: error.message, info: null });
+    if (error) return setState({ busy: false, error: authMessage(error), info: null });
     if (mode === 'up' && !data.session)
       return setState({ busy: false, error: null, info: 'Check your inbox to confirm your email, then sign in.' });
     setState({ busy: false, error: null, info: null });
@@ -52,7 +58,7 @@ export function SignIn() {
     const { error } = await auth.magicLink(form.email);
     setState({
       busy: false,
-      error: error ? error.message : null,
+      error: error ? authMessage(error) : null,
       info: error ? null : 'We sent a sign-in link to ' + form.email + '.'
     });
   };
