@@ -9,8 +9,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { execFile } from 'node:child_process';
 import { secFundamentals } from '../server/market.js';
+import { findBrowser, printToPdf } from '../server/filings.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 for (const file of ['.env.local', '.env'])
@@ -18,38 +18,13 @@ for (const file of ['.env.local', '.env'])
 const DIR = process.env.VULT_BENCHMARK_DIR || path.join(ROOT, '.vult', 'benchmark');
 const AGENT = process.env.VULT_SEC_USER_AGENT || 'Vult research desk benchmark (set VULT_SEC_USER_AGENT)';
 
-const BROWSERS = [
-  process.env.VULT_BROWSER,
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-  '/usr/bin/chromium',
-  '/usr/bin/google-chrome',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-].filter(Boolean);
-const browser = BROWSERS.find(file => fs.existsSync(file));
+const browser = findBrowser();
 
 async function sec(url) {
   const response = await fetch(url, { headers: { 'user-agent': AGENT }, signal: AbortSignal.timeout(60000) });
   if (!response.ok) throw new Error(`${url} answered ${response.status}`);
   return response;
 }
-
-const printToPdf = (html, pdf) =>
-  new Promise((resolve, reject) =>
-    execFile(
-      browser,
-      [
-        '--headless=new',
-        '--disable-gpu',
-        '--no-pdf-header-footer',
-        `--print-to-pdf=${pdf}`,
-        `file:///${html.replace(/\\/g, '/')}`
-      ],
-      { timeout: 180000, windowsHide: true },
-      error => (error && !fs.existsSync(pdf) ? reject(error) : resolve())
-    )
-  );
 
 async function fetchOne(ticker) {
   const facts = await secFundamentals(ticker);
@@ -63,7 +38,7 @@ async function fetchOne(ticker) {
   const html = path.join(DIR, `${name}.html`);
   const pdf = path.join(DIR, `${name}.pdf`);
   fs.writeFileSync(html, await (await sec(url)).text());
-  await printToPdf(html, pdf);
+  await printToPdf(browser, html, pdf);
   fs.rmSync(html, { force: true });
   // The answer key: every line item SEC reports for the filing's fiscal years, in units.
   const year = (recent.reportDate[i] || recent.filingDate[i]).slice(0, 4);

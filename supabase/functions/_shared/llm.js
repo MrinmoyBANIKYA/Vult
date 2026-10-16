@@ -33,7 +33,7 @@ export const PROVIDERS = {
     local: false,
     baseUrl: 'https://api.groq.com/openai/v1',
     keyEnv: 'GROQ_API_KEY',
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: 'openai/gpt-oss-120b',
     jsonMode: 'object',
     note: 'Hosted, free tier with rate limits. Key from console.groq.com.'
   },
@@ -159,7 +159,9 @@ async function send(url, init, { timeoutMs = 300_000, attempts = 4 } = {}) {
       await sleep(wait);
       continue;
     }
-    throw new LlmError(`Model server returned ${response.status}: ${detail}`, response.status === 401 ? 401 : 502);
+    // 400 and 422 pass through so callers can retry with a looser request; other failures are the server's.
+    const status = [400, 401, 422].includes(response.status) ? response.status : 502;
+    throw new LlmError(`Model server returned ${response.status}: ${detail}`, status);
   }
   throw last;
 }
@@ -227,10 +229,13 @@ async function openaiChat(cfg, { system, user, schema, maxTokens, temperature })
     headers['HTTP-Referer'] = 'https://vult.local';
     headers['X-Title'] = 'Vult';
   }
+  // gpt-oss reasons before it answers: keep that short and leave room for it, or the answer comes back empty.
+  const reasons = /gpt-oss/i.test(cfg.model);
   const base = {
     model: cfg.model,
     temperature,
-    max_tokens: maxTokens,
+    max_tokens: reasons ? maxTokens + 4096 : maxTokens,
+    ...(reasons ? { reasoning_effort: 'low' } : {}),
     messages: [
       {
         role: 'system',

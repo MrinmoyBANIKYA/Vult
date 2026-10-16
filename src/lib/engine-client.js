@@ -47,6 +47,28 @@ export function engineClient(base = '/engine') {
     saveRun: (id, body) => call('PUT', `/runs/${encodeURIComponent(id)}`, body),
     saveRunPdf: (id, bytes) => call('PUT', `/runs/${encodeURIComponent(id)}/pdf`, { pdf: toBase64(bytes) }),
     deleteRun: id => call('DELETE', `/runs/${encodeURIComponent(id)}`),
+    /** The latest 10-K (or 20-F) for a US ticker from SEC EDGAR, as PDF bytes plus what the filing is. */
+    async annualFiling(ticker) {
+      let response;
+      try {
+        response = await fetch(`${base}/filings/annual?ticker=${encodeURIComponent(ticker)}`);
+      } catch {
+        throw Object.assign(new Error('The Vult engine is not running. Start it with `npm run engine`.'), {
+          offline: true
+        });
+      }
+      if (!response.ok || !/pdf/i.test(response.headers.get('content-type') || '')) {
+        const data = /json/i.test(response.headers.get('content-type') || '') ? await response.json() : null;
+        throw Object.assign(
+          new Error(data?.error || 'The Vult engine is not running. Start it with `npm run engine`.'),
+          {
+            status: response.status
+          }
+        );
+      }
+      const filing = JSON.parse(decodeURIComponent(response.headers.get('x-vult-filing') || '%7B%7D'));
+      return { filing, bytes: new Uint8Array(await response.arrayBuffer()) };
+    },
     async getRunPdf(id) {
       const response = await fetch(`${base}/runs/${encodeURIComponent(id)}/pdf`);
       if (!response.ok)

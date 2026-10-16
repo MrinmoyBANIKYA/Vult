@@ -79,7 +79,7 @@ const cleanTicker = value => {
   return ticker;
 };
 
-async function secCompany(ticker) {
+export async function secCompany(ticker) {
   const all = await getJson('https://www.sec.gov/files/company_tickers.json', {
     headers: { 'user-agent': secAgent() },
     key: 'sec-company-tickers'

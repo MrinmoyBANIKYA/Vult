@@ -70,12 +70,15 @@ const dotFor = s =>
         ? 'bg-info'
         : 'bg-fg3';
 function useNav() {
-  const { route, go, approvals, d } = useA();
+  const { route, go, approvals, d, live } = useA();
   const eng = route.v === 'engagement';
-  const on = k => (k === 'library' ? eng && route.tab === 'sources' : route.v === k);
+  // A client's own firm sees only the areas that work on real filings.
+  const real = Boolean(live?.real);
+  const items = real ? NAV.filter(([k]) => k === 'desk') : NAV;
+  const on = k => (real ? k === 'desk' : k === 'library' ? eng && route.tab === 'sources' : route.v === k);
   const open = k => (k === 'library' ? go('engagement', 'sources') : go(k));
   const meta = { autopilot: approvals.length || null, engagements: d.engagements.length, library: d.docs.length };
-  return { on, open, meta };
+  return { on, open, meta, items, real };
 }
 
 /* ---------------------------------------------------------------- rail (desktop) */
@@ -112,20 +115,22 @@ function RailBtn({ on, label, kbd, onClick, children, badge }) {
 }
 export function Rail() {
   const { d, route, go, run, setKeys, theme, toggleTheme } = useA();
-  const { on, open, meta } = useNav();
+  const { on, open, meta, items, real } = useNav();
   const eng = route.v === 'engagement';
-  const pins = [
-    {
-      n: d.project,
-      mono: d.mono,
-      s: run.status === 'done' ? 'ok' : run.status === 'paused' ? 'draft' : 'run',
-      main: true
-    },
-    ...d.engagements.slice(1, 3).map(e => ({ n: e.n, mono: initials(e.t), s: e.s }))
-  ];
+  const pins = real
+    ? []
+    : [
+        {
+          n: d.project,
+          mono: d.mono,
+          s: run.status === 'done' ? 'ok' : run.status === 'paused' ? 'draft' : 'run',
+          main: true
+        },
+        ...d.engagements.slice(1, 3).map(e => ({ n: e.n, mono: initials(e.t), s: e.s }))
+      ];
   return (
     <nav aria-label="Main" className="flex h-full w-[76px] shrink-0 flex-col items-center gap-1.5 pb-4 pt-2">
-      {NAV.map(([k, I, l], i) => {
+      {items.map(([k, I, l], i) => {
         const isOn = on(k);
         return (
           <RailBtn
@@ -144,7 +149,7 @@ export function Rail() {
           </RailBtn>
         );
       })}
-      <span className="my-2 h-px w-7 bg-line2" />
+      {pins.length > 0 && <span className="my-2 h-px w-7 bg-line2" />}
       {pins.map(p => {
         const isOn = p.main && eng && route.tab !== 'sources';
         return (
@@ -183,14 +188,14 @@ export function Rail() {
 /* ---------------------------------------------------------------- mobile navigation */
 export function MobileNav() {
   const { d, ws, setWs, go, run, setKeys } = useA();
-  const { on, open, meta } = useNav();
+  const { on, open, meta, items, real } = useNav();
   return (
     <div className="flex h-full flex-col gap-1 overflow-y-auto p-4">
       <div className="mb-3 flex items-center gap-2.5 px-1">
         <Mark size={30} />
         <b className="text-[19px] font-bold tracking-[-.03em]">Vult</b>
       </div>
-      <div className="mb-3 grid grid-cols-2 gap-1 rounded-full bg-fg/5 p-1">
+      <div className={cn('mb-3 grid grid-cols-2 gap-1 rounded-full bg-fg/5 p-1', real && 'hidden')}>
         {['uk', 'us'].map(k => (
           <button
             key={k}
@@ -204,7 +209,7 @@ export function MobileNav() {
           </button>
         ))}
       </div>
-      {NAV.map(([k, I, l]) => {
+      {items.map(([k, I, l]) => {
         const isOn = on(k),
           m = meta[k];
         return (
@@ -234,16 +239,20 @@ export function MobileNav() {
           </button>
         );
       })}
-      <div className="px-3 pb-1 pt-4 text-xs font-semibold text-fg3">Pinned</div>
-      <button
-        onClick={() => go('engagement', 'run')}
-        className="flex h-11 items-center gap-3 rounded-2xl px-3 text-left text-[14px] font-medium text-fg2"
-      >
-        <CoLogo text={d.mono} tg size={26} />
-        <span className="flex-1 truncate">{d.project}</span>
-        <span className={cn('h-2 w-2 rounded-full', dotFor(run.status === 'done' ? 'ok' : 'run'))} />
-      </button>
-      {d.engagements.slice(1, 3).map(e => (
+      {!real && (
+        <>
+          <div className="px-3 pb-1 pt-4 text-xs font-semibold text-fg3">Pinned</div>
+          <button
+            onClick={() => go('engagement', 'run')}
+            className="flex h-11 items-center gap-3 rounded-2xl px-3 text-left text-[14px] font-medium text-fg2"
+          >
+            <CoLogo text={d.mono} tg size={26} />
+            <span className="flex-1 truncate">{d.project}</span>
+            <span className={cn('h-2 w-2 rounded-full', dotFor(run.status === 'done' ? 'ok' : 'run'))} />
+          </button>
+        </>
+      )}
+      {(real ? [] : d.engagements.slice(1, 3)).map(e => (
         <button
           key={e.n}
           onClick={() => go('engagements')}
@@ -272,7 +281,9 @@ export function MobileNav() {
           </span>
         </div>
         <p className="px-1 text-[11px] leading-snug text-fg3">
-          Concept product. Every company, client and figure here is fictional.
+          {real
+            ? 'Figures are read from the filings you load and checked by code. Review before you circulate.'
+            : 'Concept product. Every company, client and figure here is fictional.'}
         </p>
       </div>
     </div>
@@ -292,6 +303,8 @@ export function Header({ wide }) {
   ];
   const iconBtn =
     'relative grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line/80 bg-raised/70 text-fg2 transition-colors hover:border-line2 hover:text-fg';
+  // Search, notifications, the co-pilot and engagements are scripted; a client's own firm does not see them.
+  const real = Boolean(live?.real);
   return (
     <header className="flex h-[68px] shrink-0 items-center gap-2 pr-3 sm:gap-3 sm:pr-5">
       {wide ? (
@@ -313,7 +326,15 @@ export function Header({ wide }) {
         </div>
       )}
       {wide && <b className="-ml-1.5 mr-1 text-[21px] font-bold tracking-[-.035em]">Vult</b>}
-      {wide && (
+      {wide && real && (
+        <span className="flex h-10 items-center gap-2 rounded-full border border-line/80 bg-raised/70 pl-1.5 pr-3 text-[13px] font-medium text-fg2">
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-fg/8 text-[10px] font-bold text-fg">
+            {d.orgMono}
+          </span>
+          <span className="max-xl:hidden">{d.org}</span>
+        </span>
+      )}
+      {wide && !real && (
         <Dropdown>
           <DropdownTrigger asChild>
             <button className="flex h-10 items-center gap-2 rounded-full border border-line/80 bg-raised/70 pl-1.5 pr-3 text-[13px] font-medium text-fg2 transition-colors hover:border-line2 hover:text-fg">
@@ -346,7 +367,7 @@ export function Header({ wide }) {
           </DropdownContent>
         </Dropdown>
       )}
-      <div className="flex min-w-0 flex-1 justify-center">
+      <div className={cn('flex min-w-0 flex-1 justify-center', real && 'invisible')}>
         <button
           onClick={() => setPal(true)}
           className={cn(
@@ -362,65 +383,69 @@ export function Header({ wide }) {
           <Kbd className="max-sm:hidden">{KMOD === '⌘' ? '⌘K' : 'Ctrl K'}</Kbd>
         </button>
       </div>
-      <Popover>
-        <Tip label="Notifications">
-          <PopoverTrigger asChild>
-            <button aria-label="Notifications" className={cn(iconBtn, 'max-sm:hidden')}>
-              <Bell size={17} />
-              <span className="absolute right-[10px] top-[9px] h-2 w-2 rounded-full bg-brand ring-2 ring-raised" />
-            </button>
-          </PopoverTrigger>
-        </Tip>
-        <PopoverContent className="w-[360px]">
-          <div className="flex items-center justify-between px-2 pb-1.5 pt-1.5">
-            <b className="text-[13px] font-semibold">Notifications</b>
-            <span className="text-xs text-fg3">3 new</span>
-          </div>
-          {notes.map(([I, a, b, t, tab, tone]) => (
-            <button
-              key={a}
-              onClick={() => go('engagement', tab)}
-              className="flex w-full items-start gap-3 rounded-xl px-2 py-2 text-left hover:bg-fg/5"
-            >
-              <span
-                className={cn(
-                  'grid h-9 w-9 shrink-0 place-items-center rounded-full',
-                  {
-                    pos: 'bg-pos/12 text-pos',
-                    info: 'bg-info/12 text-info',
-                    presence: 'bg-presence/[.14] text-presence'
-                  }[tone]
-                )}
+      {!real && (
+        <Popover>
+          <Tip label="Notifications">
+            <PopoverTrigger asChild>
+              <button aria-label="Notifications" className={cn(iconBtn, 'max-sm:hidden')}>
+                <Bell size={17} />
+                <span className="absolute right-[10px] top-[9px] h-2 w-2 rounded-full bg-brand ring-2 ring-raised" />
+              </button>
+            </PopoverTrigger>
+          </Tip>
+          <PopoverContent className="w-[360px]">
+            <div className="flex items-center justify-between px-2 pb-1.5 pt-1.5">
+              <b className="text-[13px] font-semibold">Notifications</b>
+              <span className="text-xs text-fg3">3 new</span>
+            </div>
+            {notes.map(([I, a, b, t, tab, tone]) => (
+              <button
+                key={a}
+                onClick={() => go('engagement', tab)}
+                className="flex w-full items-start gap-3 rounded-xl px-2 py-2 text-left hover:bg-fg/5"
               >
-                <I size={16} />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col leading-snug">
-                <b className="text-[13px] font-semibold">{a}</b>
-                <span className="truncate text-xs text-fg3">{b}</span>
-              </span>
-              <span className="text-[11px] text-fg3">{t}</span>
-            </button>
-          ))}
-        </PopoverContent>
-      </Popover>
-      <Tip label="Ask Vult" kbd={`${KMOD} J`}>
-        <button
-          onClick={toggleAsk}
-          aria-pressed={askOn}
-          aria-label="Ask Vult"
-          className={cn(
-            'inline-flex h-10 shrink-0 items-center gap-2 rounded-full pl-1.5 text-[13px] font-semibold transition-all',
-            wide ? 'pr-4' : 'pr-1.5',
-            askOn
-              ? 'bg-fg text-chrome shadow-[0_0_0_4px_hsl(var(--gold)/.25)]'
-              : 'border border-line/80 bg-raised/70 text-fg hover:border-gold/60'
-          )}
-        >
-          <Mark size={28} tile />
-          {wide && 'Ask Vult'}
-        </button>
-      </Tip>
-      {wide && (
+                <span
+                  className={cn(
+                    'grid h-9 w-9 shrink-0 place-items-center rounded-full',
+                    {
+                      pos: 'bg-pos/12 text-pos',
+                      info: 'bg-info/12 text-info',
+                      presence: 'bg-presence/[.14] text-presence'
+                    }[tone]
+                  )}
+                >
+                  <I size={16} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col leading-snug">
+                  <b className="text-[13px] font-semibold">{a}</b>
+                  <span className="truncate text-xs text-fg3">{b}</span>
+                </span>
+                <span className="text-[11px] text-fg3">{t}</span>
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      )}
+      {!real && (
+        <Tip label="Ask Vult" kbd={`${KMOD} J`}>
+          <button
+            onClick={toggleAsk}
+            aria-pressed={askOn}
+            aria-label="Ask Vult"
+            className={cn(
+              'inline-flex h-10 shrink-0 items-center gap-2 rounded-full pl-1.5 text-[13px] font-semibold transition-all',
+              wide ? 'pr-4' : 'pr-1.5',
+              askOn
+                ? 'bg-fg text-chrome shadow-[0_0_0_4px_hsl(var(--gold)/.25)]'
+                : 'border border-line/80 bg-raised/70 text-fg hover:border-gold/60'
+            )}
+          >
+            <Mark size={28} tile />
+            {wide && 'Ask Vult'}
+          </button>
+        </Tip>
+      )}
+      {wide && !real && (
         <Button variant="primary" className="h-10 shrink-0 rounded-full px-4" onClick={newEng}>
           <Plus size={15} />
           New engagement
@@ -453,15 +478,15 @@ export function Header({ wide }) {
             </span>
           </div>
           <DropdownSep />
-          <DropdownLabel>Workspace</DropdownLabel>
-          {['uk', 'us'].map(k => (
+          {!real && <DropdownLabel>Workspace</DropdownLabel>}
+          {(real ? [] : ['uk', 'us']).map(k => (
             <DropdownItem key={k} onSelect={() => setWs(k)}>
               <Globe size={15} className="text-fg3" />
               <span className="flex-1">{R[k].org}</span>
               {ws === k && <Check size={15} className="text-gold" />}
             </DropdownItem>
           ))}
-          <DropdownSep />
+          {!real && <DropdownSep />}
           <DropdownItem onSelect={toggleTheme}>
             {theme === 'light' ? <Moon size={15} className="text-fg3" /> : <Sun size={15} className="text-fg3" />}
             <span className="flex-1">{theme === 'light' ? 'Dark theme' : 'Light theme'}</span>

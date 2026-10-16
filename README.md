@@ -64,7 +64,7 @@ Click any figure to open the PDF page with the row and the value highlighted.
 | ----------------------------- | ----------------- | ----------------------------------------------------------------------- |
 | Ollama                        | This machine      | `ollama pull qwen3:8b` (about 5 GB, fits a 6 GB GPU); larger: `qwen3:14b` |
 | LM Studio                     | This machine      | Start its local server and load a model                                 |
-| Groq                          | Hosted, free tier | Key from console.groq.com; default `llama-3.3-70b-versatile`          |
+| Groq                          | Hosted, free tier | Key from console.groq.com; default `openai/gpt-oss-120b`          |
 | Google Gemini                 | Hosted, free tier | Key from aistudio.google.com; default `gemini-2.5-flash`              |
 | OpenRouter, OpenAI, Anthropic | Hosted            | Paid or free models, depending on the provider                          |
 | Custom                        | Anywhere          | Any OpenAI-compatible endpoint (vLLM, a private deployment)             |
@@ -105,7 +105,7 @@ npm run functions:serve
 npx supabase login
 npx supabase link --project-ref <your-project-ref>
 npx supabase db push --include-seed          # schema, security rules and demo data
-npx supabase secrets set VULT_LLM_PROVIDER=groq VULT_LLM_MODEL=llama-3.3-70b-versatile GROQ_API_KEY=...
+npx supabase secrets set VULT_LLM_PROVIDER=groq VULT_LLM_MODEL=openai/gpt-oss-120b GROQ_API_KEY=...
 npm run functions:deploy
 ```
 

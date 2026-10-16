@@ -24,6 +24,7 @@ import { deleteRun, getRun, listRuns, readPdf, savePdf, saveRun } from './runs.j
 import { authenticate } from './auth.js';
 import { logRequest, queues } from './queue.js';
 import { beta, fundamentals, fx, peer, quote, riskFree } from './market.js';
+import { annualFilingPdf } from './filings.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 for (const file of ['.env.local', '.env']) {
@@ -203,6 +204,16 @@ routes['GET /engine/market/fundamentals'] = async (req, url) =>
 routes['GET /engine/market/fx'] = async (req, url) => fx(url.searchParams.get('from'), url.searchParams.get('to'));
 routes['GET /engine/market/peer'] = async (req, url) => peer(url.searchParams.get('ticker'));
 
+/* ------------------------------------------------------------------ real filings from SEC EDGAR */
+routes['GET /engine/filings/annual'] = async (req, url) => {
+  const { filing, bytes } = await annualFilingPdf(url.searchParams.get('ticker'));
+  return {
+    [BINARY]: bytes,
+    type: 'application/pdf',
+    headers: { 'x-vult-filing': encodeURIComponent(JSON.stringify(filing)) }
+  };
+};
+
 /* ------------------------------------------------------------------ saved Filing desk runs */
 routes['GET /engine/runs'] = async () => ({ runs: listRuns() });
 
@@ -289,7 +300,7 @@ const server = http.createServer(async (req, res) => {
     if (!handler) throw new HttpError(404, 'Not found');
     const body = await handler(req, url);
     if (body?.[BINARY]) {
-      res.writeHead(200, { 'content-type': body.type, 'cache-control': 'no-store' });
+      res.writeHead(200, { 'content-type': body.type, 'cache-control': 'no-store', ...body.headers });
       return res.end(body[BINARY]);
     }
     send(res, 200, body);

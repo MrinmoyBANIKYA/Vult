@@ -199,8 +199,12 @@ export function assay({
     const pretax = g('income', 'pretax_income', period);
     const tax = g('income', 'income_tax', period);
     const ni = g('income', 'net_income', period);
+    // Net income attributable to the company excludes the minority interests' share, where one is printed.
+    const nci = Math.abs(g('income', 'net_income_nci', period) ?? 0);
     if ([pretax, tax, ni].every(Number.isFinite)) {
-      const passed = close(pretax - tax, ni) || close(pretax + tax, ni);
+      const passed = [0, nci].some(
+        minority => close(pretax - tax - minority, ni) || close(pretax + tax - minority, ni)
+      );
       add(
         'accounts',
         'Pre-tax income less tax equals net income',
@@ -214,11 +218,17 @@ export function assay({
     const cfNi = g('cashflow', 'net_income', period);
     if (Number.isFinite(ni) && Number.isFinite(cfNi)) {
       const passed = close(ni, cfNi);
+      // The cash flow often starts from net income including minority interests.
+      const withMinority = !passed && nci > 0 && close(ni + nci, cfNi);
       add(
         'accounts',
         'Net income agrees between income statement and cash flow',
-        passed,
-        passed ? `${fmt(ni)} in both for FY${period}.` : `${fmt(ni)} against ${fmt(cfNi)} for FY${period}.`,
+        passed || withMinority,
+        passed
+          ? `${fmt(ni)} in both for FY${period}.`
+          : withMinority
+            ? `${fmt(cfNi)} on the cash flow is ${fmt(ni)} plus ${fmt(nci)} to minority interests for FY${period}.`
+            : `${fmt(ni)} against ${fmt(cfNi)} for FY${period}.`,
         { period }
       );
     }

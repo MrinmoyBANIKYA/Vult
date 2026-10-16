@@ -46,6 +46,9 @@ function LiveGate({ children }) {
   // The user's own firm decides which workspace opens first.
   const orgs = ready.orgs ?? [];
   const home = orgs.find(org => !org.is_demo) ?? orgs[0];
+  const homeRegion = home?.region ?? null;
+  // A client's own firm sees only real work; demo workspaces keep the scripted showcase.
+  const firmName = home && !home.is_demo ? home.name : null;
   const value = React.useMemo(
     () =>
       session
@@ -54,11 +57,12 @@ function LiveGate({ children }) {
             session,
             profile: ready.profile,
             email: session.user.email,
-            homeRegion: home?.region ?? null,
+            homeRegion,
+            firm: firmName ? { name: firmName, region: homeRegion } : null,
             signOut: () => auth.signOut()
           }
         : null,
-    [session, ready.profile, home?.region]
+    [session, ready.profile, homeRegion, firmName]
   );
 
   if (session === undefined || (session && ready.userId !== userId)) return <Splash />;

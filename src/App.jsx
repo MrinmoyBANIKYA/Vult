@@ -21,7 +21,7 @@ import { TooltipProvider, Sheet } from './components/ui.jsx';
 import { cn } from './lib/utils.js';
 import { Ctx, useMedia } from './lib/context.js';
 import { KMOD } from './lib/keys.js';
-import { R, ALL, TABS, planFor, defaultEntry, copilot, filesFor, hm } from './lib/engine.js';
+import { R, ALL, TABS, planFor, defaultEntry, copilot, filesFor, hm, initials } from './lib/engine.js';
 import { AUTO } from './lib/autopilot.js';
 import * as api from './lib/api.js';
 import { useSession } from './auth/session.js';
@@ -93,16 +93,19 @@ export default function App() {
 
   /* ---------------------------------------------------------------- data: demo, overlaid with Supabase rows when connected */
   const profile = sessionInfo.profile;
+  // A client's own firm: only the Filing desk, which works on real filings, is shown.
+  const firm = sessionInfo.firm ?? null;
   const d = React.useMemo(() => {
     const base = R[ws];
     const name = profile && profile.full_name;
-    if (!liveData && !name) return base;
+    if (!liveData && !name && !firm) return base;
     return {
       ...base,
       ...(liveData ? { engagements: liveData.engagements } : null),
-      ...(name ? { me: { ...base.me, n: name, r: profile.title || base.me.r } } : null)
+      ...(firm ? { org: firm.name, orgMono: initials(firm.name), orgDesc: '' } : null),
+      ...(name ? { me: { ...base.me, n: name, r: profile.title || (firm ? 'Analyst' : base.me.r) } } : null)
     };
-  }, [ws, liveData, profile]);
+  }, [ws, liveData, profile, firm]);
 
   const [dismissed, setDismissed] = React.useState([]);
   const [decided, setDecided] = React.useState([]);
@@ -564,6 +567,7 @@ export default function App() {
     live: {
       status: live.status,
       connected: sessionInfo.live,
+      real: Boolean(firm),
       orgId: liveData?.orgId ?? null,
       email: sessionInfo.email,
       signOut: sessionInfo.signOut
@@ -571,12 +575,12 @@ export default function App() {
   };
 
   const view =
-    route.v === 'home' ? (
-      <Home />
-    ) : route.v === 'desk' ? (
+    firm || route.v === 'desk' ? (
       <React.Suspense fallback={<div className="px-7 pt-6 text-[13px] text-fg3">Loading the Filing desk</div>}>
         <DeskView />
       </React.Suspense>
+    ) : route.v === 'home' ? (
+      <Home />
     ) : route.v === 'autopilot' ? (
       <Autopilot />
     ) : route.v === 'engagements' ? (
@@ -586,21 +590,23 @@ export default function App() {
     ) : (
       <EngagementView />
     );
-  const dockEl = dock ? (
-    dock.k === 'ev' ? (
-      <EvidencePanel k={dock.key} key={dock.key} />
-    ) : dock.k === 'cell' ? (
-      <CellPanel rc={dock.rc} />
-    ) : (
-      <AskPanel />
-    )
-  ) : null;
+  // The evidence, cell and co-pilot panels belong to the scripted engagements.
+  const dockEl =
+    dock && !firm ? (
+      dock.k === 'ev' ? (
+        <EvidencePanel k={dock.key} key={dock.key} />
+      ) : dock.k === 'cell' ? (
+        <CellPanel rc={dock.rc} />
+      ) : (
+        <AskPanel />
+      )
+    ) : null;
 
   return (
     <Ctx.Provider value={ctx}>
       <TooltipProvider delayDuration={300} skipDelayDuration={150}>
         <MotionConfig reducedMotion="user">
-          <div className={cn('flex h-full flex-col', dock && wideDock && 'dock')}>
+          <div className={cn('flex h-full flex-col', dockEl && wideDock && 'dock')}>
             <Header wide={wideSb} />
             <div className="flex min-h-0 flex-1">
               {wideSb ? (
@@ -632,7 +638,7 @@ export default function App() {
                       </motion.div>
                     </div>
                   </RPanel>
-                  {dock && wideDock && (
+                  {dockEl && wideDock && (
                     <>
                       <PanelResizeHandle className="group relative w-3 outline-hidden">
                         <span className="absolute inset-y-[45%] left-1/2 w-1 -translate-x-1/2 rounded-full bg-line2 transition-colors group-hover:bg-fg3 group-data-[resize-handle-state=drag]:bg-gold" />
@@ -652,7 +658,7 @@ export default function App() {
                 </PanelGroup>
               </main>
             </div>
-            {dock && !wideDock && (
+            {dockEl && !wideDock && (
               <Sheet
                 open
                 onOpenChange={o => {
@@ -663,10 +669,10 @@ export default function App() {
                 {dockEl}
               </Sheet>
             )}
-            <Palette />
+            {!firm && <Palette />}
             <KeysDialog />
             <Toaster
-              position={dock && wideDock ? 'bottom-center' : 'bottom-right'}
+              position={dockEl && wideDock ? 'bottom-center' : 'bottom-right'}
               theme={theme}
               gap={10}
               offset={20}

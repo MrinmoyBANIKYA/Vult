@@ -1113,7 +1113,7 @@ export function DeskView() {
     }
   };
 
-  const run = async (texts, name, scans = ocr) => {
+  const run = async (texts, name, scans = ocr, symbol = ticker) => {
     setRunning(true);
     setError('');
     setSteps({});
@@ -1127,12 +1127,13 @@ export function DeskView() {
         ocrPages: Object.keys(scans ?? {}).map(Number)
       });
       setResult(output);
-      await persist(output, {}, 'Built from the filing', {
-        id: newRunId(),
-        createdAt: new Date().toISOString(),
-        createdBy: analyst,
-        versions: []
-      });
+      await persist(
+        output,
+        {},
+        'Built from the filing',
+        { id: newRunId(), createdAt: new Date().toISOString(), createdBy: analyst, versions: [] },
+        { ticker: symbol }
+      );
     } catch (cause) {
       setError(cause.offline ? cause.message : `${cause.message}`);
       setSteps(current => {
@@ -1144,9 +1145,10 @@ export function DeskView() {
     }
   };
 
-  const choose = async candidate => {
+  const choose = async (candidate, symbol = '') => {
     if (!candidate) return;
     reset();
+    if (symbol) setTicker(symbol);
     if (!/\.pdf$/i.test(candidate.name)) return setError('Choose a PDF annual report or 10-K.');
     if (candidate.size > MAX_FILE_SIZE) return setError('Vult reads PDFs up to 80 MB.');
     setFile(candidate);
@@ -1158,10 +1160,28 @@ export function DeskView() {
       setOcr(parsed.ocr);
       setPageTexts(parsed.pageTexts);
       setReading(null);
-      if (health.state === 'online') await run(parsed.pageTexts, candidate.name, parsed.ocr);
+      if (health.state === 'online') await run(parsed.pageTexts, candidate.name, parsed.ocr, symbol);
     } catch (cause) {
       setReading(null);
       setError(cause.message || 'The PDF could not be read.');
+    }
+  };
+
+  // Pulls a company's latest annual filing from SEC EDGAR through the engine, then reads it like an upload.
+  const [lookup, setLookup] = React.useState({ ticker: '', busy: false, filing: null });
+  const fetchFiling = async event => {
+    event.preventDefault();
+    const symbol = lookup.ticker.trim().toUpperCase();
+    if (!symbol) return;
+    setLookup(current => ({ ...current, busy: true, filing: null }));
+    setError('');
+    try {
+      const { filing, bytes } = await engine.annualFiling(symbol);
+      setLookup(current => ({ ...current, busy: false, filing }));
+      await choose(new File([bytes], `${filing.name}.pdf`, { type: 'application/pdf' }), filing.ticker);
+    } catch (cause) {
+      setLookup(current => ({ ...current, busy: false }));
+      setError(cause.message);
     }
   };
 
@@ -1347,6 +1367,46 @@ export function DeskView() {
                 onChange={event => void choose(event.target.files?.[0])}
               />
             </label>
+
+            <form onSubmit={fetchFiling} className="mt-3 flex flex-wrap items-end gap-2">
+              <label htmlFor="desk-ticker" className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <span className="text-[12.5px] font-semibold text-fg2">Or fetch the latest 10-K from SEC EDGAR</span>
+                <input
+                  id="desk-ticker"
+                  value={lookup.ticker}
+                  onChange={event => setLookup(current => ({ ...current, ticker: event.target.value }))}
+                  placeholder="US ticker, such as AAPL"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={10}
+                  disabled={lookup.busy || running || Boolean(reading)}
+                  className="h-9 rounded-ctl border border-line2 bg-inset px-3 font-mono text-[13px] uppercase text-fg outline-hidden placeholder:font-sans placeholder:normal-case placeholder:text-fg3 focus:border-gold/60"
+                />
+              </label>
+              <Button
+                type="submit"
+                disabled={
+                  !lookup.ticker.trim() || lookup.busy || running || Boolean(reading) || health.state !== 'online'
+                }
+              >
+                {lookup.busy ? <LoaderCircle size={15} className="animate-spin" /> : <Globe size={15} />}
+                Fetch filing
+              </Button>
+            </form>
+            {lookup.busy && (
+              <p role="status" className="mt-2 text-[12px] text-fg3">
+                Downloading from SEC EDGAR and printing to PDF. The first time takes about a minute.
+              </p>
+            )}
+            {lookup.filing && !lookup.busy && (
+              <p className="mt-2 text-[12px] text-fg3">
+                {lookup.filing.company}, {lookup.filing.form} for the period to {lookup.filing.period}, filed{' '}
+                {lookup.filing.filed}.{' '}
+                <a href={lookup.filing.url} target="_blank" rel="noreferrer" className="text-gold hover:underline">
+                  Open on EDGAR
+                </a>
+              </p>
+            )}
 
             {pageTexts && !running && !result && health.state === 'online' && (
               <Button variant="primary" className="mt-4" onClick={() => run(pageTexts, file.name)}>
