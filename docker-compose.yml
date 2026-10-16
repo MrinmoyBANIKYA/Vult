@@ -1,0 +1,43 @@
+# Vult with a local model server, for a firm's own network or a single-tenant cloud account.
+#
+#   cp .env.example .env.production   # fill in Supabase, VULT_ENGINE_TOKEN and VULT_SEC_USER_AGENT
+#   docker compose up -d
+#   docker compose exec ollama ollama pull qwen3:8b
+#
+# No filing text leaves these two containers: Ollama runs the model, the engine runs everything else.
+services:
+  vult:
+    build:
+      context: .
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:-}
+    ports:
+      - '8787:8787'
+    env_file: .env.production
+    environment:
+      VULT_LLM_PROVIDER: ollama
+      VULT_LLM_BASE_URL: http://ollama:11434
+    volumes:
+      - vult-data:/app/.vult
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.12.6
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    # Uncomment on a host with an NVIDIA GPU and the container toolkit.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  vult-data:
+  ollama-models:

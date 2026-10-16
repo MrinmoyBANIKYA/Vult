@@ -1,0 +1,420 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* ------------------------------------------------------------------------------------------------
+   Vult design tokens
+   A full-width header and a slim icon rail frame one open canvas. Content sits on rounded cards,
+   with a resizable dock on the right for evidence and the co-pilot. Ink-black base with soft blue
+   light; electric blue carries data and actions, Vult red is reserved for the brand mark.
+   Tokens are bare HSL triplets so any colour can take an alpha: hsl(var(--gold) / .2).
+   ------------------------------------------------------------------------------------------------ */
+:root {
+  --chrome: 228 16% 5%;
+  --surface: 228 16% 5.5%;
+  --raised: 228 13% 9.5%;
+  --overlay: 228 12% 13%;
+  --inset: 228 12% 12.5%;
+  --line: 228 11% 15.5%;
+  --line2: 228 9% 21%;
+  --fg: 0 0% 98%;
+  --fg2: 225 9% 70%;
+  --fg3: 225 7% 50%;
+  --gold: 207 100% 60%; /* primary accent (electric blue); named for the hallmark, kept for continuity */
+  --accent2: 224 88% 57%;
+  --brand: 345 100% 49%;
+  --lime: 84 70% 62%;
+  --pos: 84 66% 60%;
+  --neg: 2 82% 66%;
+  --info: 207 100% 70%;
+  --presence: 262 90% 75%;
+  --warn: 38 92% 62%;
+  --page: 220 20% 98%;
+  --pagefg: 228 30% 10%;
+  --btn: 0 0% 98%;
+  --btnfg: 228 16% 6%;
+  --shadow: 228 40% 2%;
+  --hi: 0 0% 100%;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --chrome: 220 24% 95%;
+  --surface: 220 26% 96%;
+  --raised: 0 0% 100%;
+  --overlay: 0 0% 100%;
+  --inset: 220 24% 96%;
+  --line: 220 18% 90%;
+  --line2: 220 14% 83%;
+  --fg: 228 30% 9%;
+  --fg2: 226 12% 36%;
+  --fg3: 224 9% 52%;
+  --gold: 210 96% 46%;
+  --accent2: 226 82% 52%;
+  --brand: 345 100% 47%;
+  --lime: 96 62% 32%;
+  --pos: 122 52% 32%;
+  --neg: 2 66% 48%;
+  --info: 214 90% 46%;
+  --presence: 262 60% 52%;
+  --warn: 33 92% 36%;
+  --page: 0 0% 100%;
+  --pagefg: 228 30% 10%;
+  --btn: 228 30% 9%;
+  --btnfg: 0 0% 100%;
+  --shadow: 226 40% 30%;
+  --hi: 0 0% 100%;
+  color-scheme: light;
+}
+
+/* Slides and documents always render on paper, whatever the app theme. */
+.light-scope {
+  --surface: 0 0% 100%;
+  --raised: 220 33% 98%;
+  --overlay: 0 0% 100%;
+  --inset: 220 25% 96%;
+  --line: 220 18% 90%;
+  --line2: 220 14% 83%;
+  --fg: 228 30% 9%;
+  --fg2: 226 12% 36%;
+  --fg3: 224 9% 52%;
+  --gold: 210 96% 46%;
+  --accent2: 226 82% 52%;
+  --pos: 122 52% 32%;
+  --neg: 2 66% 48%;
+  --info: 214 90% 46%;
+  --presence: 262 60% 52%;
+  --warn: 33 92% 36%;
+}
+
+/* `inline` makes utilities read the raw variables, so scopes such as .light-scope can re-theme a subtree. */
+@theme inline {
+  --color-chrome: hsl(var(--chrome));
+  --color-surface: hsl(var(--surface));
+  --color-raised: hsl(var(--raised));
+  --color-overlay: hsl(var(--overlay));
+  --color-inset: hsl(var(--inset));
+  --color-line: hsl(var(--line));
+  --color-line2: hsl(var(--line2));
+  --color-fg: hsl(var(--fg));
+  --color-fg2: hsl(var(--fg2));
+  --color-fg3: hsl(var(--fg3));
+  --color-gold: hsl(var(--gold));
+  --color-pos: hsl(var(--pos));
+  --color-neg: hsl(var(--neg));
+  --color-info: hsl(var(--info));
+  --color-presence: hsl(var(--presence));
+  --color-warn: hsl(var(--warn));
+  --color-page: hsl(var(--page));
+  --color-pagefg: hsl(var(--pagefg));
+  --color-btn: hsl(var(--btn));
+  --color-btnfg: hsl(var(--btnfg));
+  --color-accent2: hsl(var(--accent2));
+  --color-brand: hsl(var(--brand));
+  --color-lime: hsl(var(--lime));
+
+  --shadow-pop: 0 0 0 1px hsl(var(--line2) / 0.7), 0 24px 64px -16px hsl(var(--shadow) / 0.55);
+  --shadow-lift: inset 0 1px 0 hsl(var(--hi) / 0.05), 0 1px 2px hsl(var(--shadow) / 0.12);
+  --shadow-glow: 0 0 0 4px hsl(var(--gold) / 0.16);
+  --shadow-cta: 0 10px 30px -10px hsl(var(--accent2) / 0.7), inset 0 1px 0 hsl(0 0% 100% / 0.22);
+}
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 11px;
+  --text-2xs--line-height: 15px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 19px;
+  --text-base: 14px;
+  --text-base--line-height: 21px;
+
+  --radius-frame: 22px;
+  --radius-panel: 20px;
+  --radius-ctl: 12px;
+
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-tape: tape 60s linear infinite;
+  --animate-pulse2: pulse2 1.6s ease-in-out infinite;
+  --animate-sheen: sheen 6s ease-in-out 1s infinite;
+
+  @keyframes shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+  @keyframes tape {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  @keyframes pulse2 {
+    50% {
+      opacity: 0.4;
+    }
+  }
+  @keyframes sheen {
+    0%,
+    70% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}
+
+@layer base {
+  /* Tailwind v4 defaults borders to currentColor; keep the quieter v3 default for bare `border` classes. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: hsl(var(--line));
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 620px at 22% -12%, hsl(var(--accent2) / 0.13), transparent 62%),
+      radial-gradient(900px 520px at 96% -8%, hsl(262 80% 60% / 0.07), transparent 60%), hsl(var(--chrome));
+    background-attachment: fixed;
+    color: hsl(var(--fg));
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'tnum' 1;
+  }
+  #root {
+    height: 100%;
+  }
+  ::selection {
+    background: hsl(var(--gold) / 0.22);
+  }
+  :focus-visible {
+    outline: 2px solid hsl(var(--info));
+    outline-offset: 1px;
+    border-radius: 5px;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--line2)) transparent;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+}
+
+@layer components {
+  .hair {
+    border-color: hsl(var(--line));
+  }
+  .card {
+    border-radius: 20px;
+    border: 1px solid hsl(var(--line) / 0.8);
+    background: hsl(var(--raised));
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.035),
+      0 20px 40px -32px hsl(var(--shadow) / 0.55);
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  .skel {
+    border-radius: 6px;
+    background: linear-gradient(90deg, hsl(var(--fg) / 0.05) 25%, hsl(var(--fg) / 0.1) 50%, hsl(var(--fg) / 0.05) 75%);
+    background-size: 300% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+  .dotgrid {
+    background-image: radial-gradient(hsl(var(--fg) / 0.09) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: radial-gradient(ellipse 70% 100% at 50% 0%, #000 30%, transparent 75%);
+  }
+  .glass {
+    background: hsl(var(--overlay) / 0.86);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  }
+  .glow-line {
+    filter: drop-shadow(0 0 6px hsl(var(--gold) / 0.65));
+  }
+  .cta-grad {
+    background-image: linear-gradient(100deg, hsl(198 100% 56%), hsl(var(--accent2)));
+  }
+
+  /* Spreadsheet grid used by the model view */
+  .xl td {
+    border-bottom: 1px solid hsl(var(--line));
+    border-right: 1px solid hsl(var(--line));
+    padding: 0 9px;
+    height: 28px;
+    text-align: right;
+    white-space: nowrap;
+    cursor: cell;
+    position: relative;
+  }
+  .xl th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: hsl(var(--raised));
+    color: hsl(var(--fg3));
+    font-weight: 500;
+    font-size: 11px;
+    border-bottom: 1px solid hsl(var(--line));
+    border-right: 1px solid hsl(var(--line));
+    padding: 4px 6px;
+    text-align: center;
+  }
+  .xl th.rn {
+    left: 0;
+    z-index: 3;
+    width: 36px;
+  }
+  .xl tbody th.rn {
+    z-index: 1;
+  }
+  .xl td.colA {
+    text-align: left;
+    min-width: 220px;
+  }
+  .xl td.lb {
+    text-align: left;
+  }
+  .xl td.in {
+    color: hsl(var(--info));
+  }
+  .xl td.lk {
+    color: hsl(var(--pos));
+  }
+  .xl td.hd {
+    font-weight: 600;
+  }
+  .xl td.ttl {
+    text-align: left;
+    font-weight: 600;
+  }
+  .xl td.tot {
+    font-weight: 600;
+    box-shadow: inset 0 1px 0 hsl(var(--fg3));
+  }
+  .xl td.it {
+    font-style: italic;
+    color: hsl(var(--fg2));
+  }
+  .xl td.shi {
+    background: hsl(var(--pos) / 0.12);
+  }
+  .xl td.slo {
+    background: hsl(var(--neg) / 0.11);
+  }
+  .xl td.ctr {
+    font-weight: 700;
+    box-shadow: inset 0 0 0 1.5px hsl(var(--fg2));
+  }
+  .xl td.chg {
+    background: hsl(var(--gold) / 0.16);
+    transition: background 1.2s;
+  }
+  .xl td.sel {
+    box-shadow: inset 0 0 0 2px hsl(var(--pos));
+    background: hsl(var(--pos) / 0.1);
+  }
+  .xl td.peer {
+    box-shadow: inset 0 0 0 2px hsl(var(--presence));
+  }
+
+  /* Highlighted rows in source documents */
+  .doc-hl td {
+    background: hsl(39 70% 62% / 0.28);
+    box-shadow:
+      inset 0 1px 0 hsl(39 60% 40% / 0.5),
+      inset 0 -1px 0 hsl(39 60% 40% / 0.5);
+  }
+  .doc-hl td:first-child {
+    box-shadow:
+      inset 3px 0 0 hsl(39 70% 38%),
+      inset 0 1px 0 hsl(39 60% 40% / 0.5),
+      inset 0 -1px 0 hsl(39 60% 40% / 0.5);
+  }
+
+  /* Hallmark punches */
+  .punch .po {
+    fill: hsl(var(--gold) / 0.12);
+    stroke: hsl(var(--gold));
+    stroke-width: 1.5;
+  }
+  .punch .pi {
+    fill: none;
+    stroke: hsl(var(--gold));
+    stroke-width: 0.75;
+    opacity: 0.5;
+  }
+  .punch text {
+    fill: hsl(var(--gold));
+    font-family: var(--font-sans);
+    font-weight: 800;
+    font-size: 13.5px;
+    letter-spacing: 0.05em;
+  }
+  .on-paper .punch .po {
+    fill: hsl(214 90% 45% / 0.08);
+    stroke: hsl(214 85% 42%);
+  }
+  .on-paper .punch .pi {
+    stroke: hsl(214 85% 42%);
+  }
+  .on-paper .punch text {
+    fill: hsl(214 85% 42%);
+  }
+
+  /* Third-party overrides */
+  .react-flow__attribution {
+    display: none;
+  }
+  .react-flow__pane {
+    cursor: default !important;
+  }
+  .recharts-tooltip-cursor {
+    stroke: hsl(var(--fg3));
+  }
+  .recharts-text {
+    fill: hsl(var(--fg3));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

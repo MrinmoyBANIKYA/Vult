@@ -1,0 +1,18 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" },
+  "eslint.useFlatConfig": true,
+
+  // Edge functions run on Deno; the rest of the project is Node and the browser.
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.lint": true,
+  "[typescript]": { "editor.defaultFormatter": "denoland.vscode-deno" },
+
+  // Tailwind v4 reads its theme from the CSS entry point. Class hints also work inside cn() and cva().
+  "tailwindCSS.experimental.configFile": "src/index.css",
+  "tailwindCSS.classFunctions": ["cn", "cva"],
+  "files.associations": { "*.css": "tailwindcss" },
+
+  "search.exclude": { "**/node_modules": true, "**/dist": true, "package-lock.json": true }
+}
